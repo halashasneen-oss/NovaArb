@@ -107,6 +107,7 @@ def _synchronized_exit_books(
 ) -> tuple[OrderBookSnapshot, OrderBookSnapshot] | FundingSettlementReason:
     spot_position = spot_index.start_index(target_ms)
     futures_position = futures_index.start_index(target_ms)
+    saw_pair_within_wait = False
 
     while spot_position < len(spot_index.books) and futures_position < len(futures_index.books):
         spot = spot_index.books[spot_position]
@@ -115,7 +116,8 @@ def _synchronized_exit_books(
             spot.received_time_ms - target_ms > max_wait_ms
             or futures.received_time_ms - target_ms > max_wait_ms
         ):
-            return FundingSettlementReason.MISSING_EXIT_BOOK
+            break
+        saw_pair_within_wait = True
 
         skew = spot.received_time_ms - futures.received_time_ms
         if abs(skew) <= max_skew_ms:
@@ -125,6 +127,8 @@ def _synchronized_exit_books(
         else:
             futures_position += 1
 
+    if saw_pair_within_wait:
+        return FundingSettlementReason.EXIT_BOOK_SKEW
     return FundingSettlementReason.MISSING_EXIT_BOOK
 
 
@@ -159,22 +163,6 @@ def _next_target_after(
         return None
     first = min(candidates, key=lambda item: item.received_time_ms)
     return first.next_funding_time_ms
-
-
-def _build_settlements(
-    candidate: _EntryCandidate,
-    funding_snapshots: tuple[FundingSnapshot, ...],
-) -> tuple[tuple[FundingSettlementPayment, ...], int] | FundingSettlementReason:
-    opportunity = candidate.opportunity
-    target_ms = candidate.funding.next_funding_time_ms
-    if target_ms <= opportunity.created_time_ms:
-        return FundingSettlementReason.INVALID_SETTLEMENT_SCHEDULE
-
-    settlements: list[FundingSettlementPayment] = []
-    for interval in range(opportunity.strategy_config.funding_intervals if False else 0):
-        raise AssertionError(interval)
-
-    return tuple(settlements), target_ms
 
 
 def _settlement_schedule(
@@ -217,8 +205,8 @@ def _realize_candidate(
     candidate: _EntryCandidate,
     *,
     funding_snapshots: tuple[FundingSnapshot, ...],
-    spot_books: tuple[OrderBookSnapshot, ...],
-    futures_books: tuple[OrderBookSnapshot, ...],
+    spot_index: _BookIndex,
+    futures_index: _BookIndex,
     spot_fee_bps: Decimal,
     futures_fee_bps: Decimal,
     intervals: int,
@@ -234,8 +222,8 @@ def _realize_candidate(
     settlements, exit_target_ms = schedule
 
     exit_books = _synchronized_exit_books(
-        _BookIndex(spot_books),
-        _BookIndex(futures_books),
+        spot_index,
+        futures_index,
         target_ms=exit_target_ms,
         max_wait_ms=replay_config.max_exit_wait_ms,
         max_skew_ms=replay_config.max_exit_book_skew_ms,
@@ -243,11 +231,6 @@ def _realize_candidate(
     if isinstance(exit_books, FundingSettlementReason):
         return exit_books
     spot_exit_book, futures_exit_book = exit_books
-    if (
-        abs(spot_exit_book.received_time_ms - futures_exit_book.received_time_ms)
-        > replay_config.max_exit_book_skew_ms
-    ):
-        return FundingSettlementReason.EXIT_BOOK_SKEW
 
     quantity = candidate.opportunity.base_quantity
     try:
@@ -336,10 +319,14 @@ def replay_funding_settlements(
             continue
         candidates.append(_EntryCandidate(event.opportunity, funding))
 
-    for snapshots in funding_by_symbol.values():
-        snapshots.sort(key=lambda item: item.received_time_ms)
-    for books in books_by_key.values():
-        books.sort(key=lambda item: item.received_time_ms)
+    funding_index = {
+        symbol: tuple(sorted(snapshots, key=lambda item: item.received_time_ms))
+        for symbol, snapshots in funding_by_symbol.items()
+    }
+    book_indices = {
+        key: _BookIndex(tuple(books))
+        for key, books in books_by_key.items()
+    }
 
     grouped_candidates: dict[str, list[_EntryCandidate]] = defaultdict(list)
     for candidate in candidates:
@@ -353,6 +340,8 @@ def replay_funding_settlements(
 
     for symbol in sorted(grouped_candidates):
         next_entry_ms = 0
+        spot_index = book_indices.get((symbol, MarketType.SPOT), _BookIndex(()))
+        futures_index = book_indices.get((symbol, MarketType.PERPETUAL), _BookIndex(()))
         for candidate in grouped_candidates[symbol]:
             entry_ms = candidate.opportunity.created_time_ms
             if entry_ms < next_entry_ms:
@@ -360,9 +349,9 @@ def replay_funding_settlements(
             attempted += 1
             result = _realize_candidate(
                 candidate,
-                funding_snapshots=tuple(funding_by_symbol.get(symbol, ())),
-                spot_books=tuple(books_by_key.get((symbol, MarketType.SPOT), ())),
-                futures_books=tuple(books_by_key.get((symbol, MarketType.PERPETUAL), ())),
+                funding_snapshots=funding_index.get(symbol, ()),
+                spot_index=spot_index,
+                futures_index=futures_index,
                 spot_fee_bps=config.spot_taker_fee_bps,
                 futures_fee_bps=config.futures_taker_fee_bps,
                 intervals=config.funding_intervals,
