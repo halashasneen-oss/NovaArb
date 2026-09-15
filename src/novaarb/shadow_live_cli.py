@@ -8,6 +8,7 @@ from decimal import Decimal
 from novaarb.allocator import AllocationConfig
 from novaarb.bybit import BybitPublicVenueAdapter
 from novaarb.cross_venue import CrossVenueConfig, VenueCostProfile
+from novaarb.operator_metrics import TelemetryResearchRecorder, stream_telemetry_payload
 from novaarb.research import ResearchRecorder
 from novaarb.shadow import MultiAssetInventoryLedger, ShadowRiskConfig
 from novaarb.shadow_live import (
@@ -20,6 +21,7 @@ from novaarb.shadow_scanner import (
     MultiInstrumentPublicShadowScanner,
     MultiInstrumentShadowEngine,
 )
+from novaarb.stream_telemetry import StreamTelemetry
 from novaarb.venue import BinancePublicVenueAdapter
 
 
@@ -96,7 +98,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--metrics",
         default=None,
-        help="optional heartbeat metrics research log (.jsonl or .jsonl.gz)",
+        help=(
+            "optional heartbeat metrics research log (.jsonl or .jsonl.gz); "
+            "includes WebSocket disconnect/rate-limit telemetry"
+        ),
     )
     return parser
 
@@ -118,13 +123,16 @@ def _costs(args: argparse.Namespace) -> tuple[VenueCostProfile, ...]:
     )
 
 
-async def _run(args: argparse.Namespace) -> ShadowLiveCoordinator:
+async def _run(args: argparse.Namespace) -> tuple[ShadowLiveCoordinator, StreamTelemetry]:
     instruments = _parse_instruments(args.instrument)
     balances = _parse_balances(args.balance)
     costs = _costs(args)
     inventory = MultiAssetInventoryLedger(balances)
+    telemetry = StreamTelemetry()
     market_recorder = ResearchRecorder(args.record) if args.record else None
-    metrics_recorder = ResearchRecorder(args.metrics) if args.metrics else None
+    metrics_recorder = (
+        TelemetryResearchRecorder(args.metrics, telemetry=telemetry) if args.metrics else None
+    )
     engine = MultiInstrumentShadowEngine(
         config=CrossVenueConfig(
             target_notional_quote=args.notional,
@@ -138,7 +146,10 @@ async def _run(args: argparse.Namespace) -> ShadowLiveCoordinator:
     )
     scanner = MultiInstrumentPublicShadowScanner(
         engine=engine,
-        adapters=(BinancePublicVenueAdapter(), BybitPublicVenueAdapter()),
+        adapters=(
+            BinancePublicVenueAdapter(telemetry=telemetry),
+            BybitPublicVenueAdapter(telemetry=telemetry),
+        ),
         instruments=instruments,
         emit_cooldown_ms=args.signal_cooldown_ms,
     )
@@ -171,20 +182,22 @@ async def _run(args: argparse.Namespace) -> ShadowLiveCoordinator:
         metrics_recorder=metrics_recorder,
         duration_seconds=args.duration_seconds,
     )
-    return coordinator
+    return coordinator, telemetry
 
 
 def main() -> None:
     args = _parser().parse_args()
     print("NovaArb shadow operation starting: public market data, no live orders.")
     try:
-        coordinator = asyncio.run(_run(args))
+        coordinator, telemetry = asyncio.run(_run(args))
     except KeyboardInterrupt:
         print("\nNovaArb shadow operation stopped by operator.")
         return
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
-    print(json.dumps(coordinator.metrics(), indent=2, sort_keys=True, default=str))
+    metrics = coordinator.metrics()
+    metrics["stream_telemetry"] = stream_telemetry_payload(telemetry)
+    print(json.dumps(metrics, indent=2, sort_keys=True, default=str))
 
 
 if __name__ == "__main__":
