@@ -27,12 +27,13 @@
 
 ## Milestone 4 — evidence tooling
 - [x] capture-health event-rate and feed-delay analytics
+- [x] multi-capture feed-delay/latency baseline report tooling
 - [x] opportunity survival and edge-decay metrics
 - [x] per-route performance breakdown
 - [x] fee-tier sensitivity replay
 - [x] consolidated research evidence report
 - [ ] multi-day and multi-week real-market capture benchmark
-- [ ] deployment-host latency baseline
+- [ ] deployment-host latency baseline measured on the intended host
 - [x] machine-readable dashboard metrics feed for venue health
 - [x] machine-readable shadow portfolio metrics feed
 
