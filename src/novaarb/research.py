@@ -53,6 +53,10 @@ class ResearchRecorder:
     def append_book(self, snapshot: OrderBookSnapshot) -> None:
         self._append({"v": SCHEMA_VERSION, "kind": "book", "payload": snapshot})
 
+    def append_funding(self, snapshot: object) -> None:
+        """Persist a funding snapshot without importing exchange-specific models here."""
+        self._append({"v": SCHEMA_VERSION, "kind": "funding", "payload": snapshot})
+
     def append_evaluation(self, event: object) -> None:
         self._append({"v": SCHEMA_VERSION, "kind": "evaluation", "payload": event})
 
