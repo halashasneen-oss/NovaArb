@@ -201,7 +201,10 @@ class FundingCarryStrategy:
     def assess(self, opportunity: FundingCarryOpportunity) -> FundingCarryDecision:
         if opportunity.funding_rate_bps <= ZERO:
             return FundingCarryDecision(False, FundingCarryReason.NON_POSITIVE_FUNDING)
-        if max(opportunity.spot_book_age_ms, opportunity.futures_book_age_ms) > self.config.max_book_age_ms:
+        if (
+            max(opportunity.spot_book_age_ms, opportunity.futures_book_age_ms)
+            > self.config.max_book_age_ms
+        ):
             return FundingCarryDecision(False, FundingCarryReason.STALE_BOOK)
         if opportunity.book_skew_ms > self.config.max_book_skew_ms:
             return FundingCarryDecision(False, FundingCarryReason.BOOK_SKEW)
