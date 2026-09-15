@@ -45,3 +45,13 @@ def test_opportunity_observations_collapse_into_windows() -> None:
     assert len(windows) == 1
     assert windows[0].observations == 3
     assert windows[0].duration_ms == 250
+
+
+def test_research_metadata_roundtrip(tmp_path) -> None:
+    path = tmp_path / "session.jsonl"
+    recorder = ResearchRecorder(path)
+    recorder.append_metadata("config", {"fee_bps": Decimal("10")})
+    record = list(iter_records(path))[0]
+    assert record["kind"] == "metadata"
+    assert record["name"] == "config"
+    assert record["payload"]["fee_bps"] == "10"

@@ -69,3 +69,28 @@ def test_stale_books_are_rejected_even_when_edge_is_large() -> None:
         )
     ).assess(opportunity)
     assert decision.reason is RiskReason.STALE_BOOK
+
+
+def test_cross_book_time_skew_is_rejected() -> None:
+    spot = make_book(
+        market=MarketType.SPOT,
+        bid="99.9",
+        ask="100.0",
+        received_ms=1_000,
+    )
+    perp = make_book(
+        market=MarketType.PERPETUAL,
+        bid="102.0",
+        ask="102.1",
+        received_ms=1_300,
+    )
+    opportunity = _strategy().evaluate(spot, perp, now_ms=1_350)[0]
+    decision = RiskEngine(
+        RiskLimits(
+            min_net_edge_bps=Decimal("2"),
+            max_book_age_ms=500,
+            max_book_skew_ms=100,
+            max_notional_usd=Decimal("110"),
+        )
+    ).assess(opportunity)
+    assert decision.reason is RiskReason.BOOK_SKEW
