@@ -131,6 +131,12 @@ class RebalancePlan:
     total_quote_moved: Decimal
 
 
+@dataclass(slots=True)
+class _TransferBalance:
+    venue: str
+    amount: Decimal
+
+
 class InventoryRebalancePlanner:
     """Builds research-only inventory transfer plans; it never moves funds."""
 
@@ -138,7 +144,7 @@ class InventoryRebalancePlanner:
         self,
         *,
         targets: tuple[VenueInventoryTarget, ...],
-        config: RebalanceConfig = RebalanceConfig(),
+        config: RebalanceConfig | None = None,
     ) -> None:
         if not targets:
             raise ValueError("at least one target is required")
@@ -149,7 +155,7 @@ class InventoryRebalancePlanner:
         if sum((target.quote_share for target in targets), ZERO) != Decimal("1"):
             raise ValueError("quote target shares must sum to 1")
         self.targets = targets
-        self.config = config
+        self.config = config if config is not None else RebalanceConfig()
 
     def plan(
         self,
@@ -189,11 +195,19 @@ class InventoryRebalancePlanner:
             instructions=tuple(instructions),
             total_estimated_cost_quote=total_cost,
             total_base_moved=sum(
-                (item.amount for item in instructions if item.asset is RebalanceAsset.BASE),
+                (
+                    item.amount
+                    for item in instructions
+                    if item.asset is RebalanceAsset.BASE
+                ),
                 ZERO,
             ),
             total_quote_moved=sum(
-                (item.amount for item in instructions if item.asset is RebalanceAsset.QUOTE),
+                (
+                    item.amount
+                    for item in instructions
+                    if item.asset is RebalanceAsset.QUOTE
+                ),
                 ZERO,
             ),
         )
@@ -208,8 +222,8 @@ class InventoryRebalancePlanner:
         cost_bps: Decimal,
         quote_value_per_unit: Decimal,
     ) -> list[RebalanceInstruction]:
-        donors: list[list[object]] = []
-        receivers: list[list[object]] = []
+        donors: list[_TransferBalance] = []
+        receivers: list[_TransferBalance] = []
         target_map = {target.venue: target for target in self.targets}
 
         for venue in sorted(inventories):
@@ -220,22 +234,24 @@ class InventoryRebalancePlanner:
                 if asset is RebalanceAsset.BASE
                 else inventory.quote_available
             )
-            share = target.base_share if asset is RebalanceAsset.BASE else target.quote_share
+            share = (
+                target.base_share
+                if asset is RebalanceAsset.BASE
+                else target.quote_share
+            )
             delta = current - total * share
             if delta > ZERO:
-                donors.append([venue, delta])
+                donors.append(_TransferBalance(venue, delta))
             elif delta < ZERO:
-                receivers.append([venue, -delta])
+                receivers.append(_TransferBalance(venue, -delta))
 
         output: list[RebalanceInstruction] = []
         donor_index = 0
         receiver_index = 0
         while donor_index < len(donors) and receiver_index < len(receivers):
-            donor_venue = str(donors[donor_index][0])
-            receiver_venue = str(receivers[receiver_index][0])
-            donor_amount = Decimal(donors[donor_index][1])
-            receiver_amount = Decimal(receivers[receiver_index][1])
-            amount = min(donor_amount, receiver_amount)
+            donor = donors[donor_index]
+            receiver = receivers[receiver_index]
+            amount = min(donor.amount, receiver.amount)
 
             if amount >= min_transfer and amount > ZERO:
                 estimated_cost = (
@@ -244,20 +260,18 @@ class InventoryRebalancePlanner:
                 output.append(
                     RebalanceInstruction(
                         asset=asset,
-                        from_venue=donor_venue,
-                        to_venue=receiver_venue,
+                        from_venue=donor.venue,
+                        to_venue=receiver.venue,
                         amount=amount,
                         estimated_cost_quote=estimated_cost,
                     )
                 )
 
-            donor_amount -= amount
-            receiver_amount -= amount
-            donors[donor_index][1] = donor_amount
-            receivers[receiver_index][1] = receiver_amount
-            if donor_amount == ZERO:
+            donor.amount -= amount
+            receiver.amount -= amount
+            if donor.amount == ZERO:
                 donor_index += 1
-            if receiver_amount == ZERO:
+            if receiver.amount == ZERO:
                 receiver_index += 1
 
         return output
