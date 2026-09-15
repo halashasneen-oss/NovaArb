@@ -4,19 +4,26 @@
 
 NovaArb is built around one non-negotiable rule:
 
-> A visible price difference is not profit. It must survive fees, spread, depth slippage, timing, sequential execution, capital constraints and leg risk.
+> A visible price difference is not profit. It must survive fees, spread, depth slippage, timing, sequential execution, capital constraints, inventory drift and leg risk.
 
 There is intentionally **no authenticated order client** in the repository. The current system is a public-market-data, deterministic-replay and paper-execution laboratory.
 
 ## What exists now
 
 - Binance public Spot and USD-M Perpetual depth streams
+- Bybit public V5 Spot/linear order-book adapter with snapshot/delta reconstruction
+- generic normalized public-venue adapter contract
 - normalized immutable order books and visible-depth fill simulation
 - Spot ↔ Perpetual basis/dislocation research engine
 - incremental closed-cycle Spot triangular arbitrage engine
 - executable USDT ↔ USDC/FDUSD synthetic quote path planner
 - conservative positive-funding long-Spot/short-Perpetual carry scanner
 - self-contained funding capture and deterministic projected-carry replay
+- pre-funded cross-venue opportunity model with per-venue fees and reserves
+- Binance ↔ Bybit single-instrument public cross-venue scanner
+- inventory ledger for hypothetical pre-funded balances
+- research-only inventory rebalancing planner with transfer-cost estimates
+- latency-aware cross-venue replay against later observed books
 - exchange-rule aware quantity, notional, dust and fee handling
 - stale-book and cross-book time-skew rejection
 - versioned JSONL/gzip raw market capture
@@ -34,26 +41,24 @@ There is intentionally **no authenticated order client** in the repository. The 
 ## Research pipeline
 
 ```text
-public market data
+public market data from one or more venues
        ↓
-market-truth scanners
+normalized market-truth books
        ↓
 theoretical opportunities
        ↓
-fees / depth / staleness / clock-skew gates
+fees / depth / staleness / clock-skew / inventory gates
        ↓
-sequential latency replay where applicable
+latency-aware replay against later observed books
        ↓
-recovery model for incomplete sequences
+execution/recovery or inventory-drift accounting
        ↓
-paper portfolio + route survival + fee sensitivity
+paper PnL + edge decay + rebalance-cost evidence
        ↓
-capital-aware research allocator
-       ↓
-evidence report
+capital-aware research allocation
 ```
 
-The important number is not how many opportunities are detected. It is how many remain attractive after realistic execution assumptions and capital constraints.
+The important number is not how many opportunities are detected. It is how many remain attractive after realistic execution, inventory and capital assumptions.
 
 ## Quick start
 
@@ -88,21 +93,42 @@ novaarb-synthetic-scan --alternative-quotes USDC FDUSD
 # Public funding carry research. This reports projected carry, not realized profit.
 novaarb-funding-scan --symbols BTCUSDT ETHUSDT --record data/funding.jsonl.gz
 novaarb-funding-replay data/funding.jsonl.gz
+
+# Public Binance ↔ Bybit pre-funded cross-venue research.
+novaarb-cross-venue-scan \
+  --symbol BTCUSDT \
+  --base BTC \
+  --quote USDT \
+  --record data/cross-btc.jsonl.gz
+
+# Reprice detected cross-venue signals after assumed venue latency and measure drift.
+novaarb-cross-venue-replay data/cross-btc.jsonl.gz \
+  --base BTC \
+  --quote USDT \
+  --buy-latency-ms 50 \
+  --sell-latency-ms 50
 ```
 
-All current exchange integration uses public market data. No Binance API key is required.
+All current exchange integration uses public market data. No Binance or Bybit API key is required.
+
+## Cross-venue accounting model
+
+Cross-exchange opportunities are modeled as **pre-funded**. Quote inventory must already exist on the venue used to buy and base inventory must already exist on the venue used to sell. NovaArb does not assume that coins can be transferred after a signal appears.
+
+The replay layer then measures what happens after configurable execution latency, updates hypothetical venue inventories, reports realized edge decay and estimates what it would cost to rebalance inventory back toward the initial distribution. Transfer estimates are research outputs only; NovaArb never moves funds.
 
 ## Safety boundary
 
 1. No live order endpoint exists.
-2. No withdrawal capability exists.
-3. Secrets are excluded by `.gitignore`; future credentials must come from environment variables.
-4. Partial sequences are never silently counted as zero-loss trades; exposure is explicitly modeled.
-5. Funding results are labeled as projected carry until a holding/settlement/exit replay proves realized economics.
-6. Live execution will not be introduced until long-running capture and shadow results demonstrate a repeatable net edge across different market regimes.
+2. No withdrawal or transfer capability exists.
+3. Pre-funded venue balances are hypothetical research inventory, not connected account balances.
+4. Secrets are excluded by `.gitignore`; future credentials must come from environment variables.
+5. Partial sequences are never silently counted as zero-loss trades; exposure is explicitly modeled.
+6. Funding results are labeled as projected carry until a holding/settlement/exit replay proves realized economics.
+7. Live execution will not be introduced until long-running capture and shadow results demonstrate a repeatable net edge across different market regimes.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Current status
 
-**v0.6.0 — single-venue research stack now covers basis, triangular, synthetic quote paths, funding carry, execution decay, recovery, fee sensitivity and capital-aware allocation. The next engineering milestone is normalized multi-venue research and long-running real-market evidence.**
+**v0.7.0 — the research stack now includes normalized Binance/Bybit public market data, pre-funded cross-venue detection, inventory drift/rebalancing estimates and latency-aware cross-venue replay. The next milestone is long-running real-market evidence, venue-health metrics and multi-instrument portfolio research before any live order interface is considered.**
