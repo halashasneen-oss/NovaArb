@@ -138,7 +138,7 @@ def _balances() -> tuple[AssetBalance, ...]:
         AssetBalance("alpha", "ETH", Decimal("0")),
         AssetBalance("beta", "USDT", Decimal("100")),
         AssetBalance("beta", "BTC", Decimal("2")),
-        AssetBalance("beta", "ETH", Decimal("10")),
+        AssetBalance("beta", "ETH", Decimal("20")),
     )
 
 
@@ -201,7 +201,7 @@ def test_shadow_portfolio_replays_multiple_instruments_with_shared_inventory(tmp
     assert balances[("alpha", "BTC")] > 0
     assert balances[("alpha", "ETH")] > 0
     assert balances[("beta", "BTC")] < Decimal("2")
-    assert balances[("beta", "ETH")] < Decimal("10")
+    assert balances[("beta", "ETH")] < Decimal("20")
 
 
 def test_shadow_portfolio_allocator_prevents_capital_overcommit(tmp_path) -> None:
