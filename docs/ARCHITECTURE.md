@@ -27,24 +27,28 @@ For cross-venue Spot research:
 5. Venue/symbol health analytics measure feed delay, interarrival gaps, stale-gap ratios and out-of-order observations.
 6. Public funding snapshots from the Binance USD-M premium-index endpoint.
 7. Strategy scanners generate theoretical candidates.
-8. Exchange rules enforce minimum quantity, notional, step-size and dust behavior where applicable.
-9. Staleness and cross-book clock-skew gates reject asynchronous snapshots.
-10. Pre-funded cross-venue gates require quote on the buy venue and base on the sell venue before a candidate is actionable in research.
-11. `MultiAssetInventoryLedger` extends pre-funded accounting across many assets and venues instead of one base/quote pair.
-12. `MultiInstrumentShadowEngine` evaluates many normalized instruments against the same shared venue/asset inventory.
-13. `CapitalAwareAllocator` selects among simultaneous candidates before hypothetical execution.
-14. Selected shadow candidates are repriced from the latest observed books instead of inheriting detection prices.
-15. `ShadowRiskGuard` can halt shadow decisions for unhealthy data, daily-loss breaches, venue concentration or target-weight drift.
-16. `ShadowLiveCoordinator` applies allocation, repricing, inventory enforcement and conservative accounting to public-data signals only.
-17. Research capture stores raw books, funding updates and metadata in deterministic JSONL/gzip sessions.
-18. Replay reconstructs opportunity windows, route statistics, funding projections, cross-venue delayed fills and shared shadow portfolio outcomes.
-19. `SequentialTriangleSimulator` replaces simultaneous-fill assumptions with timed leg-by-leg execution.
-20. Cross-venue replay reprices buy and sell legs independently on the first later venue book inside the configured latency wait budget.
-21. `InventoryLedger` tracks single-instrument hypothetical pre-funded balances after simulated cross-venue fills.
-22. `InventoryRebalancePlanner` estimates transfers required to restore target inventory shares and their modeled cost.
-23. `EmergencyUnwinder` prices partial triangular exposure back to the anchor asset when possible.
-24. Paper accounting measures busy capital, cooldowns, simulated PnL, drawdown and profit factor.
-25. Fee-sensitivity replay retests identical captures under alternate taker-fee assumptions.
+8. Strategy-specific opportunities can be normalized into shared `ResearchCandidate` envelopes.
+9. Exchange rules enforce minimum quantity, notional, step-size and dust behavior where applicable.
+10. Staleness and cross-book clock-skew gates reject asynchronous snapshots.
+11. Pre-funded cross-venue gates require quote on the buy venue and base on the sell venue before a candidate is actionable in research.
+12. `MultiAssetInventoryLedger` extends pre-funded accounting across many assets and venues instead of one base/quote pair.
+13. `MultiInstrumentShadowEngine` evaluates many normalized instruments against the same shared venue/asset inventory.
+14. `ShadowCandidateBus` lets heterogeneous strategy families declare common capital and market-resource usage before allocation.
+15. `CapitalAwareAllocator` selects among simultaneous candidates before hypothetical execution.
+16. Selected cross-venue shadow candidates are repriced from the latest observed books instead of inheriting detection prices.
+17. `ShadowRiskGuard` can halt shadow decisions for unhealthy data, daily-loss breaches, venue concentration or target-weight drift.
+18. `ShadowLiveCoordinator` applies allocation, repricing, inventory enforcement and conservative accounting to public-data signals only.
+19. Research capture stores raw books, funding updates and metadata in deterministic JSONL/gzip sessions.
+20. Replay reconstructs opportunity windows, route statistics, funding projections, cross-venue delayed fills and shared shadow portfolio outcomes.
+21. `SequentialTriangleSimulator` replaces simultaneous-fill assumptions with timed leg-by-leg execution.
+22. Cross-venue replay reprices buy and sell legs independently on the first later venue book inside the configured latency wait budget.
+23. `InventoryLedger` tracks single-instrument hypothetical pre-funded balances after simulated cross-venue fills.
+24. `InventoryRebalancePlanner` estimates transfers required to restore target inventory shares and their modeled cost.
+25. `EmergencyUnwinder` prices partial triangular exposure back to the anchor asset when possible.
+26. Paper accounting measures busy capital, cooldowns, simulated PnL, drawdown and profit factor.
+27. Survival analysis measures how long approved cross-venue dislocations remain observable by direction.
+28. Cost sensitivity replay retests identical captures under alternate taker-fee and rebalance-cost assumptions.
+29. `ShadowAcceptanceCriteria` turns evidence requirements into an explicit machine-testable gate before any future authenticated work.
 
 ## Venue-health evidence
 
@@ -74,6 +78,8 @@ and the reverse direction. It reuses the same exchange-aware triangular executio
 
 The implemented research direction is positive-funding `long Spot + short Perpetual`. Expected funding is haircut conservatively and charged against entry execution cost, taker fees, exit reserve and basis-risk reserve. Negative-funding carry requiring Spot short/margin is intentionally not modeled yet.
 
+Funding opportunities can now enter the common candidate bus for capital/resource competition, but their expected carry remains projected. They are not allowed to become realized portfolio PnL until a holding-period, funding-settlement and exit model exists.
+
 ### Pre-funded cross-venue Spot arbitrage
 
 The same instrument is normalized across venues. The current public implementation can compare Binance and Bybit Spot books. A candidate is priced from visible depth in both books and charged separate taker fees plus execution and rebalance reserves.
@@ -88,15 +94,39 @@ The resulting fill is not allowed to inherit the detection price. Visible depth 
 
 After completed simulated fills, the inventory ledger reflects the resulting base/quote drift. A separate planner estimates the transfers needed to return to the initial target distribution. Those transfer instructions are research outputs only and are never executed.
 
+## Cross-venue survival evidence
+
+`analyze_cross_venue_survival` scans the same recorded public books but answers a different question from fill replay: **how long did an approved dislocation remain observable?**
+
+Approved observations are collapsed into direction-specific windows such as `binance → bybit` or `bybit → binance`. The report includes window count, median and maximum lifetime, median peak edge, and survival rates at configurable thresholds such as 25ms, 50ms, 100ms, 200ms, 500ms and 1s.
+
+Signal survival does not prove fillability. It is combined with the later-book latency replay so the project can distinguish persistent price dislocations from executable opportunities.
+
+## Cross-venue cost sensitivity
+
+`run_cross_venue_sensitivity_matrix` replays the **same capture** across a grid of taker-fee tiers and modeled inventory-transfer/rebalance costs. Every matrix cell reports completed/profitable trades, replay net PnL, rebalance cost, net after rebalance, realized edge and edge decay.
+
+This is designed to prevent assumption shopping. A candidate edge that only works under an unrealistically favorable fee tier or zero rebalancing cost should fail the evidence process instead of being promoted to live work.
+
 ## Shared shadow portfolio replay
 
 `replay_shadow_portfolio` consumes one chronological multi-venue capture containing several canonical Spot instruments. All instruments share the same `MultiAssetInventoryLedger`, `CapitalAwareAllocator` and `ShadowRiskGuard`.
 
-Approved detections are grouped into short allocation windows. The allocator chooses among simultaneous candidates using deployable capital, opportunity caps, position limits and resource conflicts. A selected detection still does not count as a fill: the engine retrieves the latest observed buy and sell books at allocation time, recalculates visible-depth economics and checks quantitative inventory again. If the edge has disappeared, the event is counted as decay rather than a zero-loss trade.
+Approved detections are grouped into short allocation windows. The allocator chooses among simultaneous candidates using deployable capital, opportunity caps, position limits and resource conflicts. A selected detection still does not count as a fill: the engine retrieves the latest observed buy and sell books at allocation time, recalculates visible-depth economics and checks quantitative inventory again.
+
+The committed execution model intentionally preserves adverse movement after selection. If the market has moved against the committed route, the hypothetical fill can be negative; it is not silently converted into a rejection just because the new edge is unattractive. This prevents survivorship bias in shadow evidence.
 
 Completed hypothetical fills update venue/asset balances and record conservative net profit. The conservative research PnL keeps configured execution and rebalance reserves even though those reserves are not debited from the hypothetical cash ledger. This intentionally makes the acceptance evidence harder to pass than raw marked inventory gain.
 
 `build_shadow_metrics` converts the replay summary into a stable JSON-ready operator payload with portfolio, venue, asset, symbol, allocation-rejection, kill-switch and optional venue-health sections.
+
+## Shared multi-strategy candidate bus
+
+`ShadowCandidateBus` normalizes strategy-specific opportunities into `CandidateEnvelope` objects backed by the existing `ResearchCandidate` allocator contract.
+
+Cross-venue Spot candidates declare the Spot markets consumed on both venues. Positive-funding carry candidates declare the Spot and Perpetual markets they consume on Binance. Because resource keys are shared across families, the allocator can reject a funding candidate when a higher-priority cross-venue candidate already consumes the same Binance Spot market.
+
+The funding adapter uses a conservative default capital multiplier rather than assuming free leverage. This bus is an allocation layer only: it does not submit orders and it does not turn projected funding carry into realized PnL.
 
 ## Foreground public shadow operation
 
@@ -114,13 +144,32 @@ The ledger can mark every nonzero asset into a common quote currency using obser
 
 The research allocator consumes normalized candidate economics rather than strategy-specific objects. It can enforce total deployable capital and cash reserve, maximum positions, maximum capital per opportunity, per-strategy position/capital limits, minimum expected edge, and resource exclusivity so overlapping markets cannot be double-allocated silently.
 
-The v0.9 shadow path uses this allocator for multi-instrument cross-venue candidates. Funding and the remaining strategy families still need adapters into the same shadow candidate bus before the project can claim a truly cross-strategy portfolio replay.
+The v0.10 research stack can normalize cross-venue Spot and projected funding carry into the same candidate bus. Remaining strategy families still need adapters, and funding still requires realized holding/settlement/exit accounting before unified portfolio PnL can include it.
+
+## Quantitative shadow acceptance gate
+
+`evaluate_shadow_acceptance` consumes machine-readable shadow metrics plus an explicit observation duration. The default gate currently requires:
+
+- at least 168 observation hours
+- at least 250 detected signals
+- at least 50 executed shadow trades
+- at least 20% selected-to-executed survival
+- at least 50% profitable shadow trades
+- positive conservative net PnL
+- no more than 3% marked drawdown relative to ending value
+- no more than 5% risk-halt rate
+- no more than 5% inventory-rejection rate
+- zero unhealthy venue streams in supplied health evidence
+
+The CLI `novaarb-shadow-gate` exits non-zero when the evidence fails. Thresholds are configurable because deployment capital, fee tier and venue mix can differ, but changing a threshold should be a deliberate research decision rather than a way to rescue a failed run.
+
+Passing the gate is **necessary evidence for later engineering review, not a profit guarantee and not permission to enable live trading**.
 
 ## Safety boundary
 
-There is no authenticated exchange client, order endpoint, withdrawal endpoint or transfer executor in v0.9. All Binance/Bybit shadow integration is public market data. Inventory, shadow-risk and rebalancing components are simulations used to expose capital constraints and hidden cross-exchange costs.
+There is no authenticated exchange client, order endpoint, withdrawal endpoint or transfer executor in v0.10. All Binance/Bybit shadow integration is public market data. Inventory, shadow-risk and rebalancing components are simulations used to expose capital constraints and hidden cross-exchange costs.
 
-Live execution remains a separate future milestone behind reviewed interfaces, hard exposure limits, kill switches and sustained shadow evidence.
+Live execution remains a separate future milestone behind reviewed interfaces, hard exposure limits, kill switches, realized-strategy accounting and sustained shadow evidence.
 
 ## Evidence required before live execution
 
@@ -128,7 +177,9 @@ Live execution remains a separate future milestone behind reviewed interfaces, h
 - venue-specific latency p50/p95/p99 from the actual deployment environment
 - cross-venue clock-skew and stale-feed distributions
 - opportunity lifetime and edge-decay distributions
+- survival curves by symbol/direction
 - paper results after actual account fee-tier assumptions
+- fee/rebalance sensitivity that remains acceptable outside one favorable assumption set
 - inventory utilization, drift and rebalance-cost distributions
 - funding settlement and exit replay rather than projected carry alone
 - adverse selection after signal
@@ -137,4 +188,4 @@ Live execution remains a separate future milestone behind reviewed interfaces, h
 - venue disconnect/reconnect and data-quality tests
 - global exposure and kill-switch tests
 - long-running multi-instrument shadow run with no real orders across multiple market regimes
-- predefined quantitative acceptance thresholds that must pass before authenticated execution code is introduced
+- quantitative acceptance thresholds that pass before authenticated execution code is introduced
