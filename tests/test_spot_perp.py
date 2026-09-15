@@ -28,7 +28,11 @@ def test_profitable_cash_and_carry_passes_risk() -> None:
     assert opportunity.costs.net_edge_bps > Decimal("50")
 
     decision = RiskEngine(
-        RiskLimits(min_net_edge_bps=Decimal("2"), max_book_age_ms=100, max_notional_usd=Decimal("110"))
+        RiskLimits(
+            min_net_edge_bps=Decimal("2"),
+            max_book_age_ms=100,
+            max_notional_usd=Decimal("110"),
+        )
     ).assess(opportunity)
     assert decision.approved is True
     assert decision.reason is RiskReason.APPROVED
@@ -39,7 +43,11 @@ def test_small_dislocation_fails_after_costs() -> None:
     perp = make_book(market=MarketType.PERPETUAL, bid="100.01", ask="100.06")
     opportunity = _strategy().evaluate(spot, perp, now_ms=1_050)[0]
     decision = RiskEngine(
-        RiskLimits(min_net_edge_bps=Decimal("2"), max_book_age_ms=100, max_notional_usd=Decimal("110"))
+        RiskLimits(
+            min_net_edge_bps=Decimal("2"),
+            max_book_age_ms=100,
+            max_notional_usd=Decimal("110"),
+        )
     ).assess(opportunity)
     assert decision.approved is False
     assert decision.reason in {RiskReason.NON_POSITIVE_PROFIT, RiskReason.EDGE_TOO_SMALL}
@@ -50,6 +58,10 @@ def test_stale_books_are_rejected_even_when_edge_is_large() -> None:
     perp = make_book(market=MarketType.PERPETUAL, bid="102.0", ask="102.1", received_ms=1_000)
     opportunity = _strategy().evaluate(spot, perp, now_ms=2_000)[0]
     decision = RiskEngine(
-        RiskLimits(min_net_edge_bps=Decimal("2"), max_book_age_ms=500, max_notional_usd=Decimal("110"))
+        RiskLimits(
+            min_net_edge_bps=Decimal("2"),
+            max_book_age_ms=500,
+            max_notional_usd=Decimal("110"),
+        )
     ).assess(opportunity)
     assert decision.reason is RiskReason.STALE_BOOK

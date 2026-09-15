@@ -8,7 +8,7 @@ from decimal import Decimal
 from novaarb.binance import BinanceDepthStream
 from novaarb.costs import ExecutableEdgeModel, FeeSchedule
 from novaarb.domain import ArbitrageOpportunity, MarketType, OrderBookSnapshot
-from novaarb.recorder import JsonlRecorder
+from novaarb.research import ResearchRecorder
 from novaarb.risk import RiskDecision, RiskEngine, RiskLimits
 from novaarb.strategies.spot_perp import SpotPerpConfig, SpotPerpStrategy
 
@@ -33,7 +33,7 @@ class ScannerEvent:
 
 
 class SpotPerpScanner:
-    def __init__(self, config: ScannerConfig, recorder: JsonlRecorder | None = None) -> None:
+    def __init__(self, config: ScannerConfig, recorder: ResearchRecorder | None = None) -> None:
         self.config = config
         self.recorder = recorder
         fees = FeeSchedule(config.spot_taker_fee_bps, config.futures_taker_fee_bps)
@@ -83,22 +83,36 @@ class SpotPerpScanner:
     ) -> None:
         while True:
             snapshot = await raw_queue.get()
-            self.books[(snapshot.market, snapshot.symbol)] = snapshot
-            spot = self.books.get((MarketType.SPOT, snapshot.symbol))
-            perp = self.books.get((MarketType.PERPETUAL, snapshot.symbol))
-            if spot is None or perp is None:
-                continue
-
             now_ms = int(time.time() * 1000)
-            for opportunity in self.strategy.evaluate(spot, perp, now_ms=now_ms):
-                risk = self.risk.assess(opportunity)
-                event = ScannerEvent(opportunity, risk)
-                if self.recorder is not None:
-                    self.recorder.append(event)
-                if not risk.approved:
+            events = self.process_snapshot(snapshot, now_ms=now_ms)
+            for event in events:
+                if not event.risk.approved:
                     continue
                 last = self.last_emit_ms.get(snapshot.symbol, 0)
                 if now_ms - last < self.config.emit_cooldown_ms:
                     continue
                 self.last_emit_ms[snapshot.symbol] = now_ms
                 await event_queue.put(event)
+
+    def process_snapshot(
+        self,
+        snapshot: OrderBookSnapshot,
+        *,
+        now_ms: int | None = None,
+    ) -> tuple[ScannerEvent, ...]:
+        now_ms = now_ms if now_ms is not None else snapshot.received_time_ms
+        if self.recorder is not None:
+            self.recorder.append_book(snapshot)
+        self.books[(snapshot.market, snapshot.symbol)] = snapshot
+        spot = self.books.get((MarketType.SPOT, snapshot.symbol))
+        perp = self.books.get((MarketType.PERPETUAL, snapshot.symbol))
+        if spot is None or perp is None:
+            return ()
+
+        output: list[ScannerEvent] = []
+        for opportunity in self.strategy.evaluate(spot, perp, now_ms=now_ms):
+            event = ScannerEvent(opportunity, self.risk.assess(opportunity))
+            output.append(event)
+            if self.recorder is not None:
+                self.recorder.append_evaluation(event)
+        return tuple(output)

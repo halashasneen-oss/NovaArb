@@ -71,7 +71,11 @@ class BinanceDepthStream:
     def _parse(self, payload: dict[str, Any], received_ms: int) -> OrderBookSnapshot:
         data = payload.get("data", payload)
         stream_name = str(payload.get("stream", ""))
-        symbol = stream_name.split("@", 1)[0].upper() if stream_name else str(data.get("s", "")).upper()
+        symbol = (
+            stream_name.split("@", 1)[0].upper()
+            if stream_name
+            else str(data.get("s", "")).upper()
+        )
         if not symbol:
             raise ValueError("cannot determine symbol from Binance depth event")
 

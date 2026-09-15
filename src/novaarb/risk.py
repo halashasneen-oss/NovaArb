@@ -37,7 +37,8 @@ class RiskEngine:
             return RiskDecision(False, RiskReason.NON_POSITIVE_PROFIT)
         if opportunity.costs.net_edge_bps < self.limits.min_net_edge_bps:
             return RiskDecision(False, RiskReason.EDGE_TOO_SMALL)
-        if max(opportunity.buy_book_age_ms, opportunity.sell_book_age_ms) > self.limits.max_book_age_ms:
+        max_age = max(opportunity.buy_book_age_ms, opportunity.sell_book_age_ms)
+        if max_age > self.limits.max_book_age_ms:
             return RiskDecision(False, RiskReason.STALE_BOOK)
         if opportunity.reference_notional_usd > self.limits.max_notional_usd:
             return RiskDecision(False, RiskReason.NOTIONAL_TOO_LARGE)

@@ -16,7 +16,8 @@ The first milestone focuses on Binance Spot ↔ USD-M Perpetual dislocations usi
 - executable-edge decomposition
 - spot/perpetual cash-and-carry scanner
 - stale-data, minimum-edge and max-notional risk gates
-- JSONL recording of evaluated opportunities for later replay
+- versioned JSONL/gzip recording of raw books + evaluations
+- deterministic replay with opportunity-window statistics
 - unit tests + GitHub Actions CI across Python 3.11–3.13
 
 ## Edge model
@@ -43,10 +44,12 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 python -m pip install -e '.[dev]'
 pytest
 
-novaarb --symbols BTCUSDT ETHUSDT BNBUSDT \
+novaarb scan --symbols BTCUSDT ETHUSDT BNBUSDT \
   --notional 50 \
   --min-edge-bps 2 \
-  --record data/opportunities.jsonl
+  --record data/session.jsonl.gz
+
+novaarb replay data/session.jsonl.gz --min-edge-bps 2
 ```
 
 The scanner uses **public market data only**. No Binance API key is required.
@@ -64,4 +67,4 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/ROADMAP.md`](docs/
 
 ## Current status
 
-**Milestone 1: market-truth layer — in progress.**
+**Milestone 1: market-truth layer — implemented. Milestone 2 research/replay — in progress.**

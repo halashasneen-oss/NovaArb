@@ -9,11 +9,12 @@
 - [x] stale-book and edge risk gates
 - [x] JSONL research recorder
 - [x] CI tests and linting
+- [x] versioned gzip-capable raw capture format
 - [ ] long-running capture benchmark on real streams
 
 ## Milestone 2 — research & replay
-- deterministic event replay
-- opportunity lifetime tracking
+- [x] deterministic event replay
+- [x] opportunity lifetime/window tracking
 - partial-fill and leg-risk simulator
 - latency distributions rather than one fixed reserve
 - per-symbol performance report
