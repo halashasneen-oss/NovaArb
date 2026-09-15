@@ -33,7 +33,7 @@
 - [x] consolidated research evidence report
 - [ ] multi-day and multi-week real-market capture benchmark
 - [ ] deployment-host latency baseline
-- [ ] dashboard metrics feed
+- [x] machine-readable dashboard metrics feed for venue health
 
 ## Milestone 5 — broader single-venue arbitrage graph
 - [x] USDT/USDC/FDUSD synthetic quote paths
@@ -55,19 +55,20 @@
 - [x] inventory drift and modeled rebalance-cost reporting
 - [ ] long-running Binance/Bybit capture benchmark
 - [ ] measured venue-specific latency distributions from deployment host
-- [ ] venue health, disconnect, stale-feed and rate-limit monitoring
-- [ ] multi-instrument inventory accounting
+- [x] venue/symbol stale-feed, delay and out-of-order health analytics
+- [x] multi-instrument venue/asset inventory accounting
+- [ ] websocket disconnect and exchange rate-limit telemetry
 - [ ] cross-venue opportunity survival curves by symbol/direction
 - [ ] cross-venue fee-tier and rebalance-cost sensitivity matrix
 
 ## Milestone 7 — shadow portfolio research
 - [ ] multi-instrument portfolio replay across strategies and venues
 - [ ] shared capital/inventory allocator across Spot, funding and cross-venue research
-- [ ] venue concentration limits
-- [ ] inventory imbalance limits
-- [ ] daily loss and abnormal-data research kill switches
+- [x] venue concentration limits
+- [x] venue inventory-weight drift limits
+- [x] daily loss and abnormal-data research kill switches
 - [ ] long-running shadow operation with no real orders
-- [ ] operator/dashboard metrics feed
+- [ ] consolidated operator/dashboard portfolio metrics feed
 
 ## Milestone 8 — guarded live execution
 Only after paper/shadow evidence passes predefined acceptance criteria:
