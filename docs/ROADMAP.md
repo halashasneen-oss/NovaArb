@@ -59,8 +59,8 @@
 - [x] venue/symbol stale-feed, delay and out-of-order health analytics
 - [x] multi-instrument venue/asset inventory accounting
 - [ ] websocket disconnect and exchange rate-limit telemetry
-- [ ] cross-venue opportunity survival curves by symbol/direction
-- [ ] cross-venue fee-tier and rebalance-cost sensitivity matrix
+- [x] cross-venue opportunity survival curves by symbol/direction
+- [x] cross-venue fee-tier and rebalance-cost sensitivity matrix
 
 ## Milestone 7 — shadow portfolio research
 - [x] multi-instrument cross-venue portfolio replay on one shared timeline
@@ -71,9 +71,11 @@
 - [x] daily loss and abnormal-data research kill switches
 - [x] foreground long-running public shadow runner with no order/transfer client
 - [x] heartbeat/operator metrics recording and final session metrics
-- [ ] integrate funding and other strategy families into the same shadow candidate bus
+- [x] shared candidate bus for cross-venue and projected funding opportunities
+- [ ] funding settlement/holding-period execution model inside the unified shadow portfolio
+- [ ] add remaining strategy families to the unified shadow candidate bus
 - [ ] multi-day shadow-operation evidence benchmark on the intended deployment host
-- [ ] predefined quantitative acceptance gate for any future authenticated execution work
+- [x] predefined quantitative acceptance gate for future authenticated execution work
 
 ## Milestone 8 — guarded live execution
 Only after paper/shadow evidence passes predefined acceptance criteria:
