@@ -6,6 +6,7 @@ from typing import Protocol
 
 from novaarb.binance import BinanceDepthStream
 from novaarb.domain import MarketType, OrderBookSnapshot
+from novaarb.stream_telemetry import StreamTelemetry
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,9 @@ class BinancePublicVenueAdapter:
 
     venue = "binance"
 
+    def __init__(self, *, telemetry: StreamTelemetry | None = None) -> None:
+        self.telemetry = telemetry
+
     async def books(
         self,
         instruments: tuple[VenueInstrument, ...],
@@ -96,10 +100,13 @@ class BinancePublicVenueAdapter:
             stream = BinanceDepthStream(
                 symbols=tuple(item.venue_symbol for item in items),
                 market=market,
+                telemetry=self.telemetry,
             )
             async for snapshot in stream.snapshots():
                 if queue.full():
                     _ = queue.get_nowait()
+                    if self.telemetry is not None:
+                        self.telemetry.record_queue_drop(self.venue, market)
                 await queue.put(snapshot)
 
         try:
