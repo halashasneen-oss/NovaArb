@@ -24,22 +24,31 @@ For cross-venue Spot research:
 2. Public Bybit V5 Spot/linear order-book streams with local snapshot/delta reconstruction.
 3. Generic `PublicVenueAdapter` normalization into immutable `NormalizedBook` objects.
 4. Immutable `OrderBookSnapshot` market truth.
-5. Public funding snapshots from the Binance USD-M premium-index endpoint.
-6. Strategy scanners generate theoretical candidates.
-7. Exchange rules enforce minimum quantity, notional, step-size and dust behavior where applicable.
-8. Staleness and cross-book clock-skew gates reject asynchronous snapshots.
-9. Pre-funded cross-venue gates require quote on the buy venue and base on the sell venue before a candidate is actionable in research.
-10. Research capture stores raw books, funding updates and metadata in deterministic JSONL/gzip sessions.
-11. Replay reconstructs opportunity windows, route statistics, funding projections and cross-venue delayed fills.
-12. `SequentialTriangleSimulator` replaces simultaneous-fill assumptions with timed leg-by-leg execution.
-13. Cross-venue replay reprices buy and sell legs independently on the first later venue book inside the configured latency wait budget.
-14. `InventoryLedger` tracks hypothetical pre-funded balances after simulated cross-venue fills.
-15. `InventoryRebalancePlanner` estimates transfers required to restore target inventory shares and their modeled cost.
-16. `EmergencyUnwinder` prices partial triangular exposure back to the anchor asset when possible.
-17. Paper accounting measures busy capital, cooldowns, simulated PnL, drawdown and profit factor.
-18. Capture-health analytics measure event rate, feed delay and interarrival gaps.
-19. Fee-sensitivity replay retests identical captures under alternate taker-fee assumptions.
-20. `CapitalAwareAllocator` ranks research candidates while enforcing cash, position, strategy and resource-conflict limits.
+5. Venue/symbol health analytics measure feed delay, interarrival gaps, stale-gap ratios and out-of-order observations.
+6. Public funding snapshots from the Binance USD-M premium-index endpoint.
+7. Strategy scanners generate theoretical candidates.
+8. Exchange rules enforce minimum quantity, notional, step-size and dust behavior where applicable.
+9. Staleness and cross-book clock-skew gates reject asynchronous snapshots.
+10. Pre-funded cross-venue gates require quote on the buy venue and base on the sell venue before a candidate is actionable in research.
+11. `MultiAssetInventoryLedger` extends pre-funded accounting across many assets and venues instead of one base/quote pair.
+12. `MultiInstrumentShadowEngine` can evaluate many normalized instruments against the same shared venue/asset inventory.
+13. `ShadowRiskGuard` can halt shadow decisions for unhealthy data, daily-loss breaches, venue concentration or target-weight drift.
+14. Research capture stores raw books, funding updates and metadata in deterministic JSONL/gzip sessions.
+15. Replay reconstructs opportunity windows, route statistics, funding projections and cross-venue delayed fills.
+16. `SequentialTriangleSimulator` replaces simultaneous-fill assumptions with timed leg-by-leg execution.
+17. Cross-venue replay reprices buy and sell legs independently on the first later venue book inside the configured latency wait budget.
+18. `InventoryLedger` tracks single-instrument hypothetical pre-funded balances after simulated cross-venue fills.
+19. `InventoryRebalancePlanner` estimates transfers required to restore target inventory shares and their modeled cost.
+20. `EmergencyUnwinder` prices partial triangular exposure back to the anchor asset when possible.
+21. Paper accounting measures busy capital, cooldowns, simulated PnL, drawdown and profit factor.
+22. Fee-sensitivity replay retests identical captures under alternate taker-fee assumptions.
+23. `CapitalAwareAllocator` ranks research candidates while enforcing cash, position, strategy and resource-conflict limits.
+
+## Venue-health evidence
+
+`novaarb-venue-health` consumes an existing JSONL/gzip capture and produces a machine-readable JSON report per venue, symbol and market. It reports event count, duration, event rate, feed-delay p50/p95/p99/max, interarrival p50/p95/p99/max, stale-gap counts/ratios and out-of-order counts/ratios.
+
+Each stream is classified as `healthy`, `degraded` or `unhealthy` from explicit thresholds. This is research evidence, not exchange status truth: it describes the quality of the data received by the deployment environment.
 
 ## Strategy families
 
@@ -77,15 +86,23 @@ The resulting fill is not allowed to inherit the detection price. Visible depth 
 
 After completed simulated fills, the inventory ledger reflects the resulting base/quote drift. A separate planner estimates the transfers needed to return to the initial target distribution. Those transfer instructions are research outputs only and are never executed.
 
+## Shadow portfolio layer
+
+The multi-asset ledger stores balances by `(venue, asset)`. A cross-venue shadow fill moves quote and base balances on the two venues while keeping unrelated assets untouched, which allows BTC, ETH and later instruments to share the same pre-funded inventory model.
+
+The ledger can mark every nonzero asset into a common quote currency using supplied reference prices. `ShadowRiskGuard` then evaluates total marked value, maximum venue concentration, maximum asset concentration, drift from configured venue target weights and realized daily PnL. An unhealthy-data flag has the highest-priority kill switch.
+
+`MultiInstrumentPublicShadowScanner` is still public-data-only. It can run many canonical instruments across multiple public adapters and uses the shared inventory ledger for instrument-specific inventory gates. It does not place orders.
+
 ## Capital allocation layer
 
 The research allocator consumes normalized candidate economics rather than strategy-specific objects. It can enforce total deployable capital and cash reserve, maximum positions, maximum capital per opportunity, per-strategy position/capital limits, minimum expected edge, and resource exclusivity so overlapping markets cannot be double-allocated silently.
 
-This is still a research selection layer; it is not an order router.
+The next shadow milestone is to combine that capital allocator with the multi-asset inventory and shadow-risk layers in one chronological multi-strategy replay.
 
 ## Safety boundary
 
-There is no authenticated exchange client, order endpoint, withdrawal endpoint or transfer executor in v0.7. All Binance/Bybit integration is public market data. Inventory and rebalancing components are simulations used to expose capital constraints and hidden cross-exchange costs.
+There is no authenticated exchange client, order endpoint, withdrawal endpoint or transfer executor in v0.8. All Binance/Bybit integration is public market data. Inventory, shadow-risk and rebalancing components are simulations used to expose capital constraints and hidden cross-exchange costs.
 
 Live execution remains a separate future milestone behind reviewed interfaces, hard exposure limits, kill switches and shadow evidence.
 
@@ -103,4 +120,4 @@ Live execution remains a separate future milestone behind reviewed interfaces, h
 - route/symbol/regime breakdowns
 - venue disconnect/reconnect and data-quality tests
 - global exposure and kill-switch tests
-- shadow run with no real orders across multiple market regimes
+- long-running multi-instrument shadow run with no real orders across multiple market regimes
