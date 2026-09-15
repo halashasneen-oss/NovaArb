@@ -31,6 +31,7 @@ novaarb-funding-scan = "novaarb.funding_cli:main"
 novaarb-funding-replay = "novaarb.funding_replay_cli:main"
 novaarb-synthetic-scan = "novaarb.synthetic_cli:main"
 novaarb-cross-venue-scan = "novaarb.cross_venue_cli:main"
+novaarb-cross-venue-replay = "novaarb.cross_venue_replay_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
