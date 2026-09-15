@@ -25,6 +25,7 @@ dev = [
 [project.scripts]
 novaarb = "novaarb.cli:main"
 novaarb-capture-report = "novaarb.capture_health:main"
+novaarb-report = "novaarb.research_report:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
