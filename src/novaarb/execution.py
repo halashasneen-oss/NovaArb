@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from bisect import bisect_left
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
-from typing import Iterable
 
-from novaarb.domain import OrderBookSnapshot, TEN_THOUSAND, ZERO
+from novaarb.domain import TEN_THOUSAND, ZERO, OrderBookSnapshot
 from novaarb.symbols import SymbolRules
 from novaarb.triangular import (
     ConversionError,
