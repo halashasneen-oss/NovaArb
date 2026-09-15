@@ -102,7 +102,12 @@ class AllocationResult:
 
 
 class CapitalAwareAllocator:
-    """Greedy research allocator with explicit capital and resource constraints."""
+    """Greedy research allocator with explicit capital and resource constraints.
+
+    Optional persistent-state arguments let a replay/live shadow coordinator account for capital,
+    positions and market resources already occupied by longer-lived research positions. Existing
+    callers that omit them retain the original batch-only behavior.
+    """
 
     def __init__(self, config: AllocationConfig) -> None:
         self.config = config
@@ -117,26 +122,48 @@ class CapitalAwareAllocator:
             candidate.opportunity_id,
         )
 
-    def allocate(self, candidates: tuple[ResearchCandidate, ...]) -> AllocationResult:
+    def allocate(
+        self,
+        candidates: tuple[ResearchCandidate, ...],
+        *,
+        reserved_capital_usdt: Decimal = ZERO,
+        open_positions: int = 0,
+        used_resources: frozenset[str] = frozenset(),
+        strategy_capital_usdt: dict[str, Decimal] | None = None,
+        strategy_positions: dict[str, int] | None = None,
+    ) -> AllocationResult:
         if len({candidate.opportunity_id for candidate in candidates}) != len(candidates):
             raise ValueError("candidate opportunity_id values must be unique")
+        if reserved_capital_usdt < ZERO:
+            raise ValueError("reserved_capital_usdt cannot be negative")
+        if reserved_capital_usdt > self.config.deployable_capital_usdt:
+            raise ValueError("reserved capital exceeds deployable capital")
+        if open_positions < 0 or open_positions > self.config.max_positions:
+            raise ValueError("open_positions must be within portfolio position limits")
+
+        existing_strategy_capital = dict(strategy_capital_usdt or {})
+        existing_strategy_positions = dict(strategy_positions or {})
+        if any(value < ZERO for value in existing_strategy_capital.values()):
+            raise ValueError("existing strategy capital cannot be negative")
+        if any(value < 0 for value in existing_strategy_positions.values()):
+            raise ValueError("existing strategy positions cannot be negative")
 
         ordered = sorted(candidates, key=self._priority, reverse=True)
         selected: list[ResearchCandidate] = []
         decisions: list[AllocationDecision] = []
-        used_resources: set[str] = set()
-        allocated = ZERO
-        strategy_capital: dict[str, Decimal] = {}
-        strategy_positions: CounterLike = {}
+        occupied_resources = set(used_resources)
+        allocated = reserved_capital_usdt
+        strategy_capital = existing_strategy_capital
+        active_strategy_positions = existing_strategy_positions
 
         for candidate in ordered:
             reason = self._rejection_reason(
                 candidate,
-                selected_count=len(selected),
+                selected_count=open_positions + len(selected),
                 allocated=allocated,
-                used_resources=used_resources,
+                used_resources=occupied_resources,
                 strategy_capital=strategy_capital,
-                strategy_positions=strategy_positions,
+                strategy_positions=active_strategy_positions,
             )
             if reason is not None:
                 decisions.append(
@@ -151,13 +178,13 @@ class CapitalAwareAllocator:
 
             selected.append(candidate)
             allocated += candidate.capital_required_usdt
-            used_resources.update(candidate.resource_keys)
+            occupied_resources.update(candidate.resource_keys)
             strategy_capital[candidate.strategy] = (
                 strategy_capital.get(candidate.strategy, ZERO)
                 + candidate.capital_required_usdt
             )
-            strategy_positions[candidate.strategy] = (
-                strategy_positions.get(candidate.strategy, 0) + 1
+            active_strategy_positions[candidate.strategy] = (
+                active_strategy_positions.get(candidate.strategy, 0) + 1
             )
             decisions.append(
                 AllocationDecision(
@@ -213,6 +240,3 @@ class CapitalAwareAllocator:
         if allocated + candidate.capital_required_usdt > self.config.deployable_capital_usdt:
             return AllocationReason.INSUFFICIENT_CAPITAL
         return None
-
-
-CounterLike = dict[str, int]
