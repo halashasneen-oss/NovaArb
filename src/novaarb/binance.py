@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from novaarb.domain import BookLevel, MarketType, OrderBookSnapshot
+from novaarb.stream_telemetry import StreamTelemetry, looks_rate_limited
 
 
 SPOT_WS = "wss://stream.binance.com:9443/stream"
@@ -24,6 +25,7 @@ class BinanceDepthStream:
         market: MarketType,
         depth: int = 20,
         update_ms: int = 100,
+        telemetry: StreamTelemetry | None = None,
     ) -> None:
         if depth not in {5, 10, 20}:
             raise ValueError("Binance partial depth supports 5, 10 or 20 levels")
@@ -35,6 +37,7 @@ class BinanceDepthStream:
         self.market = market
         self.depth = depth
         self.update_ms = update_ms
+        self.telemetry = telemetry
 
     @property
     def url(self) -> str:
@@ -49,6 +52,8 @@ class BinanceDepthStream:
 
         backoff = 1.0
         while True:
+            if self.telemetry is not None:
+                self.telemetry.record_connection_attempt("binance", self.market)
             try:
                 async with websockets.connect(
                     self.url,
@@ -57,14 +62,57 @@ class BinanceDepthStream:
                     close_timeout=5,
                     max_queue=2048,
                 ) as websocket:
+                    if self.telemetry is not None:
+                        self.telemetry.record_connected(
+                            "binance",
+                            self.market,
+                            timestamp_ms=int(time.time() * 1000),
+                        )
                     backoff = 1.0
                     async for raw in websocket:
                         received_ms = int(time.time() * 1000)
-                        payload = json.loads(raw)
-                        yield self._parse(payload, received_ms)
+                        if self.telemetry is not None:
+                            self.telemetry.record_message(
+                                "binance",
+                                self.market,
+                                timestamp_ms=received_ms,
+                            )
+                        try:
+                            payload = json.loads(raw)
+                            snapshot = self._parse(payload, received_ms)
+                        except Exception:
+                            if self.telemetry is not None:
+                                self.telemetry.record_parse_error("binance", self.market)
+                            raise
+                        if self.telemetry is not None:
+                            self.telemetry.record_snapshot(
+                                "binance",
+                                self.market,
+                                timestamp_ms=received_ms,
+                            )
+                        yield snapshot
+                    if self.telemetry is not None:
+                        self.telemetry.record_disconnect(
+                            "binance",
+                            self.market,
+                            timestamp_ms=int(time.time() * 1000),
+                        )
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
+                if self.telemetry is not None:
+                    self.telemetry.record_disconnect(
+                        "binance",
+                        self.market,
+                        timestamp_ms=int(time.time() * 1000),
+                    )
+                    if looks_rate_limited(exc):
+                        self.telemetry.record_rate_limit("binance", self.market)
+                    self.telemetry.record_backoff(
+                        "binance",
+                        self.market,
+                        milliseconds=int(backoff * 1000),
+                    )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
 
