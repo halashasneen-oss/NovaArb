@@ -22,6 +22,19 @@ class AssetBalance:
 
 
 @dataclass(frozen=True, slots=True)
+class AssetBalanceDelta:
+    venue: str
+    asset: str
+    quantity_delta: Decimal
+
+    def __post_init__(self) -> None:
+        if not self.venue or not self.asset:
+            raise ValueError("venue and asset are required")
+        if self.quantity_delta == ZERO:
+            raise ValueError("quantity_delta cannot be zero")
+
+
+@dataclass(frozen=True, slots=True)
 class VenueMark:
     venue: str
     value_quote: Decimal
@@ -42,7 +55,7 @@ class PortfolioMark:
 
 
 class MultiAssetInventoryLedger:
-    """Pre-funded venue/asset accounting shared by multiple cross-venue symbols."""
+    """Pre-funded venue/asset accounting shared by multiple research strategies."""
 
     def __init__(self, balances: tuple[AssetBalance, ...]) -> None:
         if not balances:
@@ -61,6 +74,30 @@ class MultiAssetInventoryLedger:
             for (venue, asset), quantity in sorted(self._balances.items())
         )
 
+    def apply_deltas(
+        self,
+        deltas: tuple[AssetBalanceDelta, ...],
+    ) -> tuple[AssetBalance, ...]:
+        """Apply venue/asset deltas atomically while preventing negative balances."""
+
+        if not deltas:
+            raise ValueError("at least one balance delta is required")
+        combined: dict[tuple[str, str], Decimal] = {}
+        for delta in deltas:
+            key = (delta.venue, delta.asset)
+            combined[key] = combined.get(key, ZERO) + delta.quantity_delta
+
+        projected: dict[tuple[str, str], Decimal] = {}
+        for key, quantity_delta in combined.items():
+            updated = self._balances.get(key, ZERO) + quantity_delta
+            if updated < ZERO:
+                raise ValueError(f"insufficient inventory for {key[0]}:{key[1]}")
+            projected[key] = updated
+
+        for key, updated in projected.items():
+            self._balances[key] = updated
+        return self.snapshot()
+
     def apply_cross_venue_trade(
         self,
         trade: ExecutedCrossVenueTrade,
@@ -72,10 +109,7 @@ class MultiAssetInventoryLedger:
             raise ValueError("distinct base_asset and quote_asset are required")
 
         buy_quote_key = (trade.buy_venue, quote_asset)
-        buy_base_key = (trade.buy_venue, base_asset)
         sell_base_key = (trade.sell_venue, base_asset)
-        sell_quote_key = (trade.sell_venue, quote_asset)
-
         buy_quote_required = trade.buy_quote_spent + trade.buy_fee_quote
         sell_quote_net = trade.sell_quote_received - trade.sell_fee_quote
         if sell_quote_net < ZERO:
@@ -85,19 +119,30 @@ class MultiAssetInventoryLedger:
         if self._balances.get(sell_base_key, ZERO) < trade.base_quantity:
             raise ValueError("insufficient base inventory on sell venue")
 
-        self._balances[buy_quote_key] = (
-            self._balances.get(buy_quote_key, ZERO) - buy_quote_required
+        return self.apply_deltas(
+            (
+                AssetBalanceDelta(
+                    trade.buy_venue,
+                    quote_asset,
+                    -buy_quote_required,
+                ),
+                AssetBalanceDelta(
+                    trade.buy_venue,
+                    base_asset,
+                    trade.base_quantity,
+                ),
+                AssetBalanceDelta(
+                    trade.sell_venue,
+                    base_asset,
+                    -trade.base_quantity,
+                ),
+                AssetBalanceDelta(
+                    trade.sell_venue,
+                    quote_asset,
+                    sell_quote_net,
+                ),
+            )
         )
-        self._balances[buy_base_key] = (
-            self._balances.get(buy_base_key, ZERO) + trade.base_quantity
-        )
-        self._balances[sell_base_key] = (
-            self._balances.get(sell_base_key, ZERO) - trade.base_quantity
-        )
-        self._balances[sell_quote_key] = (
-            self._balances.get(sell_quote_key, ZERO) + sell_quote_net
-        )
-        return self.snapshot()
 
     def mark_to_quote(
         self,
@@ -238,13 +283,17 @@ class ShadowRiskGuard:
             for item in mark.venue_values
         }
         all_venues = set(target_map) | set(actual_map)
-        max_drift = max(
-            (
-                abs(actual_map.get(venue, ZERO) - target_map.get(venue, ZERO))
-                for venue in all_venues
-            ),
-            default=ZERO,
-        ) if target_map else ZERO
+        max_drift = (
+            max(
+                (
+                    abs(actual_map.get(venue, ZERO) - target_map.get(venue, ZERO))
+                    for venue in all_venues
+                ),
+                default=ZERO,
+            )
+            if target_map
+            else ZERO
+        )
         daily_pnl = self.daily_pnl(timestamp_ms)
 
         reason = ShadowKillSwitchReason.NONE
