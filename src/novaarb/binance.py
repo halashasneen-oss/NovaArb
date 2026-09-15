@@ -8,7 +8,11 @@ from decimal import Decimal
 from typing import Any
 
 from novaarb.domain import BookLevel, MarketType, OrderBookSnapshot
-from novaarb.stream_telemetry import StreamTelemetry, looks_rate_limited
+from novaarb.stream_telemetry import (
+    StreamTelemetry,
+    looks_rate_limited,
+    payload_looks_rate_limited,
+)
 
 
 SPOT_WS = "wss://stream.binance.com:9443/stream"
@@ -79,6 +83,11 @@ class BinanceDepthStream:
                             )
                         try:
                             payload = json.loads(raw)
+                            if (
+                                self.telemetry is not None
+                                and payload_looks_rate_limited(payload)
+                            ):
+                                self.telemetry.record_rate_limit("binance", self.market)
                             snapshot = self._parse(payload, received_ms)
                         except Exception:
                             if self.telemetry is not None:
