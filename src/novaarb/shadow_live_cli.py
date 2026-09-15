@@ -73,6 +73,12 @@ def _parser() -> argparse.ArgumentParser:
         default=Decimal("0.80"),
     )
     parser.add_argument("--allocation-window-ms", type=int, default=100)
+    parser.add_argument(
+        "--execution-delay-ms",
+        type=int,
+        default=50,
+        help="delay between candidate selection and hypothetical public-book fill",
+    )
     parser.add_argument("--signal-cooldown-ms", type=int, default=1_000)
     parser.add_argument("--max-data-staleness-ms", type=int, default=2_000)
     parser.add_argument("--heartbeat-ms", type=int, default=5_000)
@@ -154,6 +160,7 @@ async def _run(args: argparse.Namespace) -> ShadowLiveCoordinator:
         ),
         live_config=ShadowLiveConfig(
             allocation_window_ms=args.allocation_window_ms,
+            execution_delay_ms=args.execution_delay_ms,
             heartbeat_interval_ms=args.heartbeat_ms,
             max_data_staleness_ms=args.max_data_staleness_ms,
         ),
