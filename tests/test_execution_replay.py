@@ -88,3 +88,11 @@ def test_execution_replay_compares_latency_profiles(tmp_path) -> None:
     fast, slow = summary.profiles
     assert fast.detected_signals == slow.detected_signals
     assert fast.completed >= slow.completed
+    assert fast.first_leg_ms == 25
+    assert slow.first_leg_ms == 100
+    assert fast.median_detected_edge_bps >= 0
+    assert fast.p90_edge_decay_bps >= fast.median_edge_decay_bps
+    assert Decimal("0") <= fast.profitable_signal_rate <= Decimal("1")
+    assert len(summary.route_stats) == 2
+    assert {stats.profile_name for stats in summary.route_stats} == {"fast", "slow"}
+    assert all(stats.route_id == "USDT>BTC>ETH>USDT" for stats in summary.route_stats)
