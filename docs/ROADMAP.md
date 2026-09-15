@@ -44,15 +44,32 @@
 - [ ] negative-funding carry research where Spot-short mechanics are explicitly modeled
 
 ## Milestone 6 — cross-exchange research
-- [ ] normalized venue adapter interface
-- [ ] second public market-data venue adapter
-- [ ] cross-venue clock/latency normalization
-- [ ] executable cross-exchange opportunity model
-- [ ] pre-funded inventory model
-- [ ] transfer and rebalancing planner separated from opportunity execution
-- [ ] venue health and rate-limit monitoring
+- [x] normalized public venue adapter interface
+- [x] second public market-data venue adapter (Bybit V5)
+- [x] executable pre-funded cross-venue Spot opportunity model
+- [x] separate per-venue fee/execution/rebalance assumptions
+- [x] pre-funded inventory ledger
+- [x] transfer/rebalancing planner separated from opportunity execution
+- [x] Binance ↔ Bybit public single-instrument scanner
+- [x] latency-aware later-book cross-venue replay
+- [x] inventory drift and modeled rebalance-cost reporting
+- [ ] long-running Binance/Bybit capture benchmark
+- [ ] measured venue-specific latency distributions from deployment host
+- [ ] venue health, disconnect, stale-feed and rate-limit monitoring
+- [ ] multi-instrument inventory accounting
+- [ ] cross-venue opportunity survival curves by symbol/direction
+- [ ] cross-venue fee-tier and rebalance-cost sensitivity matrix
 
-## Milestone 7 — guarded live execution
+## Milestone 7 — shadow portfolio research
+- [ ] multi-instrument portfolio replay across strategies and venues
+- [ ] shared capital/inventory allocator across Spot, funding and cross-venue research
+- [ ] venue concentration limits
+- [ ] inventory imbalance limits
+- [ ] daily loss and abnormal-data research kill switches
+- [ ] long-running shadow operation with no real orders
+- [ ] operator/dashboard metrics feed
+
+## Milestone 8 — guarded live execution
 Only after paper/shadow evidence passes predefined acceptance criteria:
 - [ ] trading-only authenticated order interface
 - [ ] atomic/sequenced execution coordinator
@@ -61,4 +78,4 @@ Only after paper/shadow evidence passes predefined acceptance criteria:
 - [ ] audit log and operator dashboard
 - [ ] staged rollout with tiny capital
 
-Live trading is intentionally absent until this milestone.
+Live orders, withdrawals and transfer execution are intentionally absent until the required evidence exists.
