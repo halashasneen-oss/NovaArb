@@ -28,6 +28,7 @@ novaarb-capture-report = "novaarb.capture_health:main"
 novaarb-report = "novaarb.research_report:main"
 novaarb-fee-report = "novaarb.fee_sensitivity:main"
 novaarb-funding-scan = "novaarb.funding_cli:main"
+novaarb-funding-replay = "novaarb.funding_replay_cli:main"
 novaarb-synthetic-scan = "novaarb.synthetic_cli:main"
 
 [tool.setuptools.packages.find]
