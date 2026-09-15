@@ -58,7 +58,7 @@
 - [ ] measured venue-specific latency distributions from deployment host
 - [x] venue/symbol stale-feed, delay and out-of-order health analytics
 - [x] multi-instrument venue/asset inventory accounting
-- [ ] websocket disconnect and exchange rate-limit telemetry
+- [x] websocket disconnect and exchange rate-limit telemetry
 - [x] cross-venue opportunity survival curves by symbol/direction
 - [x] cross-venue fee-tier and rebalance-cost sensitivity matrix
 
