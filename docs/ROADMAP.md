@@ -39,9 +39,9 @@
 ## Milestone 5 — broader single-venue arbitrage graph
 - [x] USDT/USDC/FDUSD synthetic quote paths
 - [x] positive-funding long-Spot/short-Perpetual carry research
-- [x] self-contained funding capture and deterministic replay
+- [x] self-contained funding capture and deterministic projected-carry replay
+- [x] funding settlement/holding-period modeled-realized replay against captured rates/books
 - [x] capital-aware multi-strategy research allocator
-- [ ] funding settlement/holding-period realized replay
 - [ ] negative-funding carry research where Spot-short mechanics are explicitly modeled
 
 ## Milestone 6 — cross-exchange research
@@ -71,6 +71,7 @@
 - [x] daily loss and abnormal-data research kill switches
 - [x] foreground long-running public shadow runner with no order/transfer client
 - [x] heartbeat/operator metrics recording and final session metrics
+- [x] WebSocket disconnect/rate-limit/queue-drop telemetry in shadow heartbeat evidence
 - [x] shared candidate bus for cross-venue and projected funding opportunities
 - [ ] funding settlement/holding-period execution model inside the unified shadow portfolio
 - [ ] add remaining strategy families to the unified shadow candidate bus
