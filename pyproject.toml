@@ -27,6 +27,7 @@ novaarb = "novaarb.cli:main"
 novaarb-capture-report = "novaarb.capture_health:main"
 novaarb-report = "novaarb.research_report:main"
 novaarb-fee-report = "novaarb.fee_sensitivity:main"
+novaarb-funding-scan = "novaarb.funding_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
