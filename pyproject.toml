@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "novaarb"
-version = "0.11.0"
+version = "0.12.0"
 description = "Research-first multi-market arbitrage and price-dislocation engine"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -39,6 +39,7 @@ novaarb-venue-health = "novaarb.venue_health_cli:main"
 novaarb-latency-baseline = "novaarb.latency_baseline_cli:main"
 novaarb-shadow-replay = "novaarb.shadow_portfolio_cli:main"
 novaarb-shadow-run = "novaarb.shadow_live_cli:main"
+novaarb-unified-shadow-run = "novaarb.unified_shadow_live_cli:main"
 novaarb-shadow-gate = "novaarb.shadow_acceptance_cli:main"
 
 [tool.setuptools.packages.find]
