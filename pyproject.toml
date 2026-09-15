@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "novaarb"
-version = "0.7.0"
+version = "0.8.0"
 description = "Research-first multi-market arbitrage and price-dislocation engine"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,6 +32,7 @@ novaarb-funding-replay = "novaarb.funding_replay_cli:main"
 novaarb-synthetic-scan = "novaarb.synthetic_cli:main"
 novaarb-cross-venue-scan = "novaarb.cross_venue_cli:main"
 novaarb-cross-venue-replay = "novaarb.cross_venue_replay_cli:main"
+novaarb-venue-health = "novaarb.venue_health_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
