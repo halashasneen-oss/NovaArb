@@ -59,7 +59,7 @@
 - [ ] measured venue-specific latency distributions from deployment host
 - [x] venue/symbol stale-feed, delay and out-of-order health analytics
 - [x] multi-instrument venue/asset inventory accounting
-- [x] websocket disconnect and exchange rate-limit telemetry
+- [x] websocket disconnect and exchange rate-limit telemetry for venue adapters
 - [x] cross-venue opportunity survival curves by symbol/direction
 - [x] cross-venue fee-tier and rebalance-cost sensitivity matrix
 
@@ -72,9 +72,10 @@
 - [x] daily loss and abnormal-data research kill switches
 - [x] foreground long-running public shadow runner with no order/transfer client
 - [x] heartbeat/operator metrics recording and final session metrics
-- [x] WebSocket disconnect/rate-limit/queue-drop telemetry in shadow heartbeat evidence
 - [x] shared candidate bus for cross-venue, funding, Spot/Perpetual, triangular and synthetic-quote opportunities
-- [ ] funding settlement/holding-period execution model inside the unified shadow portfolio
+- [x] stateful funding settlement/holding-period lifecycle inside the unified shadow portfolio
+- [x] unified public cross-venue + funding runner with persistent capital/resource locks
+- [ ] funding scanner WebSocket telemetry integrated into unified heartbeat evidence
 - [ ] lead/lag research adapter if that experimental family is promoted into the shared bus
 - [ ] multi-day shadow-operation evidence benchmark on the intended deployment host
 - [x] predefined quantitative acceptance gate for future authenticated execution work
