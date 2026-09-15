@@ -192,7 +192,7 @@ class ShadowLiveCoordinator:
         if mark is None:
             self.risk_halts += len(events)
             self.kill_reasons[ShadowKillSwitchReason.DATA_UNHEALTHY.value] += len(events)
-            return ShadowLiveBatchResult(0, 0, 0, len(events), 0, 0, ())
+            return ShadowLiveBatchResult(len(events), 0, 0, len(events), 0, 0, ())
 
         risk = self.guard.assess(
             timestamp_ms=timestamp_ms,
@@ -206,7 +206,10 @@ class ShadowLiveCoordinator:
 
         candidates = tuple(self._candidate(event) for event in events)
         allocation = self.allocator.allocate(candidates)
-        by_id = {candidate.opportunity_id: event for candidate, event in zip(candidates, events)}
+        by_id = {
+            candidate.opportunity_id: event
+            for candidate, event in zip(candidates, events, strict=True)
+        }
         for decision in allocation.decisions:
             if decision.selected:
                 self.allocator_selected += 1
@@ -322,7 +325,7 @@ class ShadowLiveCoordinator:
         timestamp_ms = int(time.time() * 1000) if now_ms is None else now_ms
         mark = self.portfolio_mark()
         data_healthy = self.data_healthy(now_ms=timestamp_ms)
-        risk_reason = ShadowKillSwitchReason.APPROVED.value
+        risk_reason = ShadowKillSwitchReason.NONE.value
         if mark is None:
             risk_reason = ShadowKillSwitchReason.DATA_UNHEALTHY.value
         else:
