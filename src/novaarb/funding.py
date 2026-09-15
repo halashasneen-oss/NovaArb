@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from novaarb.binance import BinanceDepthStream
 from novaarb.domain import TEN_THOUSAND, ZERO, MarketType, OrderBookSnapshot, Side
 from novaarb.orderbook import InsufficientLiquidity, simulate_base_fill
+from novaarb.research import ResearchRecorder
 
 
 PREMIUM_INDEX_URL = "https://fapi.binance.com/fapi/v1/premiumIndex"
@@ -265,6 +266,7 @@ class FundingCarryScanner:
         config: FundingCarryConfig,
         funding_refresh_seconds: int = 60,
         emit_cooldown_ms: int = 5_000,
+        recorder: ResearchRecorder | None = None,
     ) -> None:
         if not symbols:
             raise ValueError("at least one symbol is required")
@@ -275,6 +277,7 @@ class FundingCarryScanner:
         self.strategy = FundingCarryStrategy(config)
         self.funding_refresh_seconds = funding_refresh_seconds
         self.emit_cooldown_ms = emit_cooldown_ms
+        self.recorder = recorder
         self.books: dict[tuple[MarketType, str], OrderBookSnapshot] = {}
         self.funding: dict[str, FundingSnapshot] = {}
         self.last_emit_ms: dict[str, int] = {}
@@ -285,6 +288,8 @@ class FundingCarryScanner:
         for snapshot in snapshots:
             if snapshot.symbol in allowed:
                 self.funding[snapshot.symbol] = snapshot
+                if self.recorder is not None:
+                    self.recorder.append_funding(snapshot)
 
     def process_snapshot(
         self,
@@ -295,6 +300,8 @@ class FundingCarryScanner:
         if snapshot.symbol not in self.symbols:
             return None
         now_ms = snapshot.received_time_ms if now_ms is None else now_ms
+        if self.recorder is not None:
+            self.recorder.append_book(snapshot)
         self.books[(snapshot.market, snapshot.symbol)] = snapshot
         spot = self.books.get((MarketType.SPOT, snapshot.symbol))
         perpetual = self.books.get((MarketType.PERPETUAL, snapshot.symbol))
@@ -304,7 +311,10 @@ class FundingCarryScanner:
         opportunity = self.strategy.evaluate(spot, perpetual, funding, now_ms=now_ms)
         if opportunity is None:
             return None
-        return FundingScannerEvent(opportunity, self.strategy.assess(opportunity))
+        event = FundingScannerEvent(opportunity, self.strategy.assess(opportunity))
+        if self.recorder is not None:
+            self.recorder.append_evaluation(event)
+        return event
 
     async def events(self) -> asyncio.Queue[FundingScannerEvent]:
         output: asyncio.Queue[FundingScannerEvent] = asyncio.Queue(maxsize=4096)
