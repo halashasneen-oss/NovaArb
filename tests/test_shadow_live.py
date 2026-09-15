@@ -86,6 +86,7 @@ def _coordinator(engine: MultiInstrumentShadowEngine) -> ShadowLiveCoordinator:
         ),
         live_config=ShadowLiveConfig(
             allocation_window_ms=50,
+            execution_delay_ms=50,
             heartbeat_interval_ms=1_000,
             max_data_staleness_ms=500,
         ),
@@ -110,6 +111,28 @@ def test_live_shadow_coordinator_applies_hypothetical_fill_only() -> None:
     assert metrics["mode"] == "shadow_public_data_only"
     assert metrics["executed_trades"] == 1
     assert metrics["data_healthy"] is True
+
+
+def test_live_shadow_committed_fill_keeps_adverse_post_signal_move() -> None:
+    engine, event = _engine_and_event()
+    coordinator = _coordinator(engine)
+
+    engine.process_book(
+        _book(venue="alpha", bid="102", ask="103", received_ms=1_050),
+        now_ms=1_050,
+    )
+    engine.process_book(
+        _book(venue="beta", bid="101", ask="102", received_ms=1_052),
+        now_ms=1_052,
+    )
+    result = coordinator.process_batch((event,), now_ms=1_052)
+
+    assert result.executed == 1
+    assert result.trades[0].realized_edge_bps < 0
+    assert result.trades[0].conservative_net_profit_quote < 0
+    assert coordinator.profitable_trades == 0
+    assert coordinator.conservative_net_profit_quote < 0
+    assert coordinator.guard.daily_pnl(1_052) < 0
 
 
 def test_live_shadow_coordinator_halts_on_stale_public_data() -> None:
