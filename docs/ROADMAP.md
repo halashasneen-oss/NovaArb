@@ -73,9 +73,9 @@
 - [x] foreground long-running public shadow runner with no order/transfer client
 - [x] heartbeat/operator metrics recording and final session metrics
 - [x] WebSocket disconnect/rate-limit/queue-drop telemetry in shadow heartbeat evidence
-- [x] shared candidate bus for cross-venue and projected funding opportunities
+- [x] shared candidate bus for cross-venue, funding, Spot/Perpetual, triangular and synthetic-quote opportunities
 - [ ] funding settlement/holding-period execution model inside the unified shadow portfolio
-- [ ] add remaining strategy families to the unified shadow candidate bus
+- [ ] lead/lag research adapter if that experimental family is promoted into the shared bus
 - [ ] multi-day shadow-operation evidence benchmark on the intended deployment host
 - [x] predefined quantitative acceptance gate for future authenticated execution work
 
