@@ -5,6 +5,7 @@ import asyncio
 from decimal import Decimal
 
 from novaarb.funding import FundingCarryConfig, FundingCarryScanner
+from novaarb.research import ResearchRecorder
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -23,6 +24,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--basis-risk-bps", type=Decimal, default=Decimal("5"))
     parser.add_argument("--min-edge-bps", type=Decimal, default=Decimal("2"))
     parser.add_argument("--funding-refresh-seconds", type=int, default=60)
+    parser.add_argument(
+        "--record",
+        default=None,
+        help="research log (.jsonl or .jsonl.gz) with books, funding and evaluations",
+    )
     return parser
 
 
@@ -37,10 +43,22 @@ async def _run(args: argparse.Namespace) -> None:
         basis_risk_reserve_bps=args.basis_risk_bps,
         min_net_edge_bps=args.min_edge_bps,
     )
+    symbols = tuple(symbol.upper() for symbol in args.symbols)
+    recorder = ResearchRecorder(args.record) if args.record else None
+    if recorder is not None:
+        recorder.append_metadata(
+            "funding_session",
+            {
+                "symbols": symbols,
+                "config": config,
+                "funding_refresh_seconds": args.funding_refresh_seconds,
+            },
+        )
     scanner = FundingCarryScanner(
-        symbols=tuple(symbol.upper() for symbol in args.symbols),
+        symbols=symbols,
         config=config,
         funding_refresh_seconds=args.funding_refresh_seconds,
+        recorder=recorder,
     )
     queue = await scanner.events()
     print("NovaArb funding carry scanner running (public data; research only).")
