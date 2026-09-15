@@ -6,11 +6,16 @@ from typing import Any
 
 from novaarb.allocator import AllocationConfig, AllocationReason, CapitalAwareAllocator, ResearchCandidate
 from novaarb.cross_venue import CrossVenueOpportunity
+from novaarb.domain import ArbitrageOpportunity
 from novaarb.funding import FundingCarryOpportunity
+from novaarb.triangular import TriangularOpportunity
 
 
 CROSS_VENUE_STRATEGY = "prefunded_cross_venue"
 FUNDING_STRATEGY = "funding_carry_long_spot_short_perp"
+SPOT_PERP_STRATEGY = "spot_perp"
+TRIANGULAR_STRATEGY = "spot_triangular"
+SYNTHETIC_STRATEGY = "synthetic_quote"
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +46,10 @@ def _pair(base_asset: str, quote_asset: str) -> str:
     if not base or not quote or base == quote:
         raise ValueError("distinct base and quote assets are required")
     return f"{base}/{quote}"
+
+
+def _unique_resources(resources: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(resources))
 
 
 def cross_venue_envelope(
@@ -104,12 +113,100 @@ def funding_envelope(
     return CandidateEnvelope(candidate, FUNDING_STRATEGY, opportunity)
 
 
+def spot_perp_envelope(
+    opportunity: ArbitrageOpportunity,
+    *,
+    base_asset: str,
+    quote_asset: str,
+    sequence: int,
+) -> CandidateEnvelope:
+    """Normalize a Spot/Perpetual dislocation into shared allocator resources."""
+
+    if opportunity.strategy != SPOT_PERP_STRATEGY:
+        raise ValueError("spot_perp_envelope requires a spot_perp opportunity")
+    pair = _pair(base_asset, quote_asset)
+    resources = _unique_resources(
+        (
+            f"{opportunity.buy_market.value}:{opportunity.venue}:{pair}",
+            f"{opportunity.sell_market.value}:{opportunity.venue}:{pair}",
+        )
+    )
+    candidate = ResearchCandidate(
+        opportunity_id=(
+            f"spot-perp:{opportunity.created_time_ms}:{sequence}:"
+            f"{opportunity.venue}:{pair}:"
+            f"{opportunity.buy_market.value}>{opportunity.sell_market.value}"
+        ),
+        strategy=SPOT_PERP_STRATEGY,
+        capital_required_usdt=(
+            opportunity.buy_fill.quote_quantity + opportunity.sell_fill.quote_quantity
+        ),
+        expected_net_profit_usdt=opportunity.costs.net_capture_usd,
+        expected_edge_bps=opportunity.costs.net_edge_bps,
+        resource_keys=resources,
+        observed_at_ms=opportunity.created_time_ms,
+    )
+    return CandidateEnvelope(candidate, SPOT_PERP_STRATEGY, opportunity)
+
+
+def triangular_envelope(
+    opportunity: TriangularOpportunity,
+    *,
+    venue: str,
+    sequence: int,
+) -> CandidateEnvelope:
+    """Normalize a closed three-leg Spot cycle into shared allocator resources."""
+
+    resources = _unique_resources(
+        tuple(f"spot:{venue}:{symbol.upper()}" for symbol in opportunity.route.symbols)
+    )
+    candidate = ResearchCandidate(
+        opportunity_id=(
+            f"triangle:{opportunity.created_time_ms}:{sequence}:"
+            f"{venue}:{opportunity.route.route_id}"
+        ),
+        strategy=TRIANGULAR_STRATEGY,
+        capital_required_usdt=opportunity.starting_amount,
+        expected_net_profit_usdt=opportunity.net_profit,
+        expected_edge_bps=opportunity.net_edge_bps,
+        resource_keys=resources,
+        observed_at_ms=opportunity.created_time_ms,
+    )
+    return CandidateEnvelope(candidate, TRIANGULAR_STRATEGY, opportunity)
+
+
+def synthetic_envelope(
+    opportunity: TriangularOpportunity,
+    *,
+    venue: str,
+    sequence: int,
+) -> CandidateEnvelope:
+    """Normalize an executable synthetic-quote cycle represented by a triangle."""
+
+    resources = _unique_resources(
+        tuple(f"spot:{venue}:{symbol.upper()}" for symbol in opportunity.route.symbols)
+    )
+    candidate = ResearchCandidate(
+        opportunity_id=(
+            f"synthetic:{opportunity.created_time_ms}:{sequence}:"
+            f"{venue}:{opportunity.route.route_id}"
+        ),
+        strategy=SYNTHETIC_STRATEGY,
+        capital_required_usdt=opportunity.starting_amount,
+        expected_net_profit_usdt=opportunity.net_profit,
+        expected_edge_bps=opportunity.net_edge_bps,
+        resource_keys=resources,
+        observed_at_ms=opportunity.created_time_ms,
+    )
+    return CandidateEnvelope(candidate, SYNTHETIC_STRATEGY, opportunity)
+
+
 class ShadowCandidateBus:
     """Ranks heterogeneous research candidates through one capital/resource allocator.
 
     The bus only selects research opportunities. It does not submit orders and it does not
-    convert projected funding carry into realized PnL. Strategy-specific execution/replay remains
-    responsible for proving fills, holding periods and exits.
+    convert projected strategy economics into realized PnL. Strategy-specific execution/replay
+    remains responsible for proving fills, holding periods and exits.
     """
 
     def __init__(self, config: AllocationConfig) -> None:
