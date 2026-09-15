@@ -113,8 +113,9 @@ def simulate_triangle_portfolio(
     path: str,
     *,
     latency: LatencyProfile,
-    portfolio: PaperPortfolioConfig = PaperPortfolioConfig(),
+    portfolio: PaperPortfolioConfig | None = None,
 ) -> PaperPortfolioSummary:
+    portfolio = portfolio or PaperPortfolioConfig()
     records = list(iter_records(path))
     rules, routes, config = load_triangle_session(records)
     snapshots = [
