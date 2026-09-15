@@ -75,12 +75,6 @@ class CrossVenueReplaySummary:
     trades: tuple[CrossVenueReplayTrade, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class _TimedBook:
-    book: NormalizedBook
-    received_time_ms: int
-
-
 class _VenueBookIndex:
     def __init__(self, books: tuple[NormalizedBook, ...]) -> None:
         ordered = sorted(books, key=lambda item: item.snapshot.received_time_ms)
@@ -160,12 +154,19 @@ def replay_cross_venue_capture(
     quote_asset: str,
     costs: tuple[VenueCostProfile, ...],
     inventories: tuple[VenueInventory, ...],
-    strategy_config: CrossVenueConfig = CrossVenueConfig(),
-    latency: CrossVenueLatencyProfile = CrossVenueLatencyProfile(),
-    replay: CrossVenueReplayConfig = CrossVenueReplayConfig(),
-    rebalance_config: RebalanceConfig = RebalanceConfig(),
+    strategy_config: CrossVenueConfig | None = None,
+    latency: CrossVenueLatencyProfile | None = None,
+    replay: CrossVenueReplayConfig | None = None,
+    rebalance_config: RebalanceConfig | None = None,
 ) -> CrossVenueReplaySummary:
     """Replays public cross-venue books with delayed simultaneous-leg execution."""
+
+    strategy_config = strategy_config if strategy_config is not None else CrossVenueConfig()
+    latency = latency if latency is not None else CrossVenueLatencyProfile()
+    replay = replay if replay is not None else CrossVenueReplayConfig()
+    rebalance_config = (
+        rebalance_config if rebalance_config is not None else RebalanceConfig()
+    )
 
     if len(costs) < 2:
         raise ValueError("cross-venue replay requires at least two venue cost profiles")
