@@ -3,12 +3,13 @@ from __future__ import annotations
 import gzip
 import json
 from collections import Counter
+from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, is_dataclass
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from statistics import median
-from typing import Any, Iterable, Iterator, TextIO
+from typing import Any, TextIO
 
 from novaarb.domain import BookLevel, MarketType, OrderBookSnapshot
 from novaarb.risk import RiskReason
@@ -38,6 +39,16 @@ class ResearchRecorder:
         if self.path.suffix == ".gz":
             return gzip.open(self.path, "at", encoding="utf-8")
         return self.path.open("a", encoding="utf-8")
+
+    def append_metadata(self, name: str, payload: object) -> None:
+        self._append(
+            {
+                "v": SCHEMA_VERSION,
+                "kind": "metadata",
+                "name": name,
+                "payload": payload,
+            }
+        )
 
     def append_book(self, snapshot: OrderBookSnapshot) -> None:
         self._append({"v": SCHEMA_VERSION, "kind": "book", "payload": snapshot})
