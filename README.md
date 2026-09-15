@@ -4,9 +4,9 @@
 
 NovaArb is built around one non-negotiable rule:
 
-> A visible price difference is not profit. It must survive fees, spread, depth slippage, timing, sequential execution, capital constraints, inventory drift and leg risk.
+> A visible price difference is not profit. It must survive fees, spread, depth slippage, timing, sequential execution, capital constraints, inventory drift, venue health and leg risk.
 
-There is intentionally **no authenticated order client** in the repository. The current system is a public-market-data, deterministic-replay and paper-execution laboratory.
+There is intentionally **no authenticated order client** in the repository. The current system is a public-market-data, deterministic-replay and shadow/paper-execution laboratory.
 
 ## What exists now
 
@@ -21,9 +21,13 @@ There is intentionally **no authenticated order client** in the repository. The 
 - self-contained funding capture and deterministic projected-carry replay
 - pre-funded cross-venue opportunity model with per-venue fees and reserves
 - Binance ↔ Bybit single-instrument public cross-venue scanner
-- inventory ledger for hypothetical pre-funded balances
-- research-only inventory rebalancing planner with transfer-cost estimates
 - latency-aware cross-venue replay against later observed books
+- multi-asset venue inventory ledger shared across multiple symbols
+- venue concentration and inventory-weight drift risk limits
+- daily-loss and abnormal-data shadow kill switches
+- venue/symbol feed-health analytics for delay, stale gaps and out-of-order events
+- machine-readable JSON metrics output for monitoring/dashboard ingestion
+- research-only inventory rebalancing planner with transfer-cost estimates
 - exchange-rule aware quantity, notional, dust and fee handling
 - stale-book and cross-book time-skew rejection
 - versioned JSONL/gzip raw market capture
@@ -45,20 +49,24 @@ public market data from one or more venues
        ↓
 normalized market-truth books
        ↓
+venue/symbol health gates
+       ↓
 theoretical opportunities
        ↓
 fees / depth / staleness / clock-skew / inventory gates
        ↓
 latency-aware replay against later observed books
        ↓
-execution/recovery or inventory-drift accounting
+execution/recovery or multi-asset inventory-drift accounting
+       ↓
+shadow risk guard: concentration / drift / daily loss / abnormal data
        ↓
 paper PnL + edge decay + rebalance-cost evidence
        ↓
 capital-aware research allocation
 ```
 
-The important number is not how many opportunities are detected. It is how many remain attractive after realistic execution, inventory and capital assumptions.
+The important number is not how many opportunities are detected. It is how many remain attractive after realistic execution, inventory, venue-health and capital assumptions.
 
 ## Quick start
 
@@ -83,6 +91,10 @@ novaarb paper data/triangle.jsonl.gz --initial-balance 1000
 # Feed quality and consolidated evidence.
 novaarb-capture-report data/triangle.jsonl.gz
 novaarb-report data/triangle.jsonl.gz
+
+# Machine-readable venue/symbol health metrics.
+novaarb-venue-health data/cross-btc.jsonl.gz \
+  --output data/venue-health.json
 
 # Test alternate taker-fee assumptions on the same capture.
 novaarb-fee-report data/triangle.jsonl.gz
@@ -111,11 +123,13 @@ novaarb-cross-venue-replay data/cross-btc.jsonl.gz \
 
 All current exchange integration uses public market data. No Binance or Bybit API key is required.
 
-## Cross-venue accounting model
+## Cross-venue and shadow accounting model
 
 Cross-exchange opportunities are modeled as **pre-funded**. Quote inventory must already exist on the venue used to buy and base inventory must already exist on the venue used to sell. NovaArb does not assume that coins can be transferred after a signal appears.
 
-The replay layer then measures what happens after configurable execution latency, updates hypothetical venue inventories, reports realized edge decay and estimates what it would cost to rebalance inventory back toward the initial distribution. Transfer estimates are research outputs only; NovaArb never moves funds.
+The multi-asset shadow ledger extends this from one symbol to many assets on the same venues. It can mark hypothetical balances into a common quote currency and evaluate venue concentration, target-weight drift, daily realized loss and abnormal-data health before a shadow decision is allowed.
+
+The replay layer measures what happens after configurable execution latency, updates hypothetical venue inventories, reports realized edge decay and estimates what it would cost to rebalance inventory back toward the intended distribution. Transfer estimates are research outputs only; NovaArb never moves funds.
 
 ## Safety boundary
 
@@ -125,10 +139,11 @@ The replay layer then measures what happens after configurable execution latency
 4. Secrets are excluded by `.gitignore`; future credentials must come from environment variables.
 5. Partial sequences are never silently counted as zero-loss trades; exposure is explicitly modeled.
 6. Funding results are labeled as projected carry until a holding/settlement/exit replay proves realized economics.
-7. Live execution will not be introduced until long-running capture and shadow results demonstrate a repeatable net edge across different market regimes.
+7. Shadow kill switches can halt research decisions on unhealthy data, daily-loss limits, venue concentration or inventory-weight drift.
+8. Live execution will not be introduced until long-running capture and shadow results demonstrate a repeatable net edge across different market regimes.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Current status
 
-**v0.7.0 — the research stack now includes normalized Binance/Bybit public market data, pre-funded cross-venue detection, inventory drift/rebalancing estimates and latency-aware cross-venue replay. The next milestone is long-running real-market evidence, venue-health metrics and multi-instrument portfolio research before any live order interface is considered.**
+**v0.8.0 — the research stack now adds venue-health evidence, machine-readable monitoring metrics, multi-asset pre-funded inventory accounting and shadow risk kill switches. The remaining work before any live interface is long-running real-market evidence, measured host latency, multi-instrument portfolio replay and consolidated shadow-operation metrics.**
