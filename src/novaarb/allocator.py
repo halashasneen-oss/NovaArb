@@ -156,7 +156,9 @@ class CapitalAwareAllocator:
                 strategy_capital.get(candidate.strategy, ZERO)
                 + candidate.capital_required_usdt
             )
-            strategy_positions[candidate.strategy] = strategy_positions.get(candidate.strategy, 0) + 1
+            strategy_positions[candidate.strategy] = (
+                strategy_positions.get(candidate.strategy, 0) + 1
+            )
             decisions.append(
                 AllocationDecision(
                     candidate=candidate,
