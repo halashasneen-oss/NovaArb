@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from novaarb.execution import BookTimeline, LatencyProfile, SequentialTriangleSimulator
+from novaarb.recovery import EmergencyUnwinder, RecoveryPolicy
 from novaarb.research import iter_records, snapshot_from_record
 from novaarb.triangle_replay import load_triangle_session
 from novaarb.triangle_scanner import TriangularScanner
@@ -13,13 +14,18 @@ from novaarb.triangle_scanner import TriangularScanner
 class PaperPortfolioConfig:
     initial_balance: Decimal = Decimal("1000")
     route_cooldown_ms: int = 500
-    halt_on_leg_risk: bool = True
+    attempt_recovery: bool = True
+    halt_on_unrecovered_leg_risk: bool = True
+    recovery_delay_ms: int = 50
+    recovery_book_wait_ms: int = 250
 
     def __post_init__(self) -> None:
         if self.initial_balance <= 0:
             raise ValueError("initial_balance must be positive")
         if self.route_cooldown_ms < 0:
             raise ValueError("route_cooldown_ms cannot be negative")
+        if self.recovery_delay_ms < 0 or self.recovery_book_wait_ms < 0:
+            raise ValueError("recovery timing cannot be negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +36,7 @@ class PaperTrade:
     net_profit: Decimal
     realized_edge_bps: Decimal
     balance_after: Decimal
+    recovered: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +49,8 @@ class PaperPortfolioSummary:
     skipped_busy: int
     skipped_cooldown: int
     failed_executions: int
+    recovered_exposures: int
+    unrecovered_exposures: int
     halted_on_leg_risk: bool
     total_net_profit: Decimal
     return_pct: Decimal
@@ -70,6 +79,7 @@ class PaperLedger:
         completion_ms: int,
         net_profit: Decimal,
         realized_edge_bps: Decimal,
+        recovered: bool = False,
     ) -> None:
         self.balance += net_profit
         if net_profit > 0:
@@ -88,6 +98,7 @@ class PaperLedger:
                 net_profit=net_profit,
                 realized_edge_bps=realized_edge_bps,
                 balance_after=self.balance,
+                recovered=recovered,
             )
         )
 
@@ -118,12 +129,22 @@ def simulate_triangle_portfolio(
         taker_fee_bps=config.taker_fee_bps,
         latency=latency,
     )
+    unwinder = EmergencyUnwinder(
+        rules=rules,
+        taker_fee_bps=config.taker_fee_bps,
+        policy=RecoveryPolicy(
+            delay_ms=portfolio.recovery_delay_ms,
+            max_book_wait_ms=portfolio.recovery_book_wait_ms,
+        ),
+    )
     ledger = PaperLedger(portfolio.initial_balance)
     busy_until_ms = 0
     last_route_trade_ms: dict[str, int] = {}
     skipped_busy = 0
     skipped_cooldown = 0
     failed_executions = 0
+    recovered_exposures = 0
+    unrecovered_exposures = 0
     halted_on_leg_risk = False
 
     for snapshot in snapshots:
@@ -148,21 +169,41 @@ def simulate_triangle_portfolio(
                 continue
 
             result = simulator.simulate(event.opportunity, timeline)
-            if not result.completed:
-                failed_executions += 1
-                if result.legs and portfolio.halt_on_leg_risk:
-                    halted_on_leg_risk = True
+            if result.completed:
+                ledger.apply(
+                    route_id=route_id,
+                    signal_time_ms=signal_ms,
+                    completion_ms=result.completion_ms,
+                    net_profit=result.net_profit,
+                    realized_edge_bps=result.realized_edge_bps,
+                )
+                busy_until_ms = result.completion_ms
+                last_route_trade_ms[route_id] = signal_ms
                 continue
 
-            ledger.apply(
-                route_id=route_id,
-                signal_time_ms=signal_ms,
-                completion_ms=result.completion_ms,
-                net_profit=result.net_profit,
-                realized_edge_bps=result.realized_edge_bps,
-            )
-            busy_until_ms = result.completion_ms
-            last_route_trade_ms[route_id] = signal_ms
+            failed_executions += 1
+            if not result.legs:
+                continue
+
+            if portfolio.attempt_recovery:
+                recovery = unwinder.recover(event.opportunity, result, timeline)
+                if recovery.recovered:
+                    recovered_exposures += 1
+                    ledger.apply(
+                        route_id=route_id,
+                        signal_time_ms=signal_ms,
+                        completion_ms=recovery.completion_ms,
+                        net_profit=recovery.net_profit,
+                        realized_edge_bps=recovery.realized_edge_bps,
+                        recovered=True,
+                    )
+                    busy_until_ms = recovery.completion_ms
+                    last_route_trade_ms[route_id] = signal_ms
+                    continue
+
+            unrecovered_exposures += 1
+            if portfolio.halt_on_unrecovered_leg_risk:
+                halted_on_leg_risk = True
 
     profitable = sum(trade.net_profit > 0 for trade in ledger.trades)
     losing = sum(trade.net_profit <= 0 for trade in ledger.trades)
@@ -176,6 +217,8 @@ def simulate_triangle_portfolio(
         skipped_busy=skipped_busy,
         skipped_cooldown=skipped_cooldown,
         failed_executions=failed_executions,
+        recovered_exposures=recovered_exposures,
+        unrecovered_exposures=unrecovered_exposures,
         halted_on_leg_risk=halted_on_leg_risk,
         total_net_profit=total_net,
         return_pct=total_net / portfolio.initial_balance * Decimal("100"),

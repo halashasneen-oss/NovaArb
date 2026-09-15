@@ -2,42 +2,49 @@
 
 **Research-first arbitrage and price-dislocation engine.**
 
-NovaArb is being built around one non-negotiable rule:
+NovaArb is built around one non-negotiable rule:
 
-> A price difference is not an opportunity until it remains attractive after spread, depth slippage, fees, latency, closing costs and execution risk.
+> A visible price difference is not profit. It must survive fees, spread, depth slippage, timing, sequential execution and leg risk.
 
-The first milestone focuses on Binance Spot ↔ USD-M Perpetual dislocations using public order-book data. There is intentionally **no live order client** in the codebase yet.
+There is intentionally **no authenticated order client** in the repository. The current system is a market-data, replay and paper-execution laboratory.
 
 ## What exists now
 
-- Binance public Spot and USD-M Perpetual partial-depth streams (20 levels, 100 ms)
-- normalized immutable order books
-- visible-depth VWAP/fill simulation
-- executable-edge decomposition
-- spot/perpetual cash-and-carry scanner
-- stale-data, minimum-edge and max-notional risk gates
-- versioned JSONL/gzip recording of raw books + evaluations
-- deterministic replay with opportunity-window statistics
-- unit tests + GitHub Actions CI across Python 3.11–3.13
+- Binance public Spot and USD-M Perpetual partial-depth streams
+- normalized immutable order books and visible-depth fill simulation
+- Spot ↔ Perpetual basis/dislocation research engine
+- incremental closed-cycle Spot triangular arbitrage engine
+- exchange-rule aware quantity, notional, dust and fee handling
+- stale-book and cross-book time-skew rejection
+- versioned JSONL/gzip raw market capture
+- deterministic opportunity-window replay
+- sequential 3-leg execution simulation against later observed books
+- latency profiles for 25/50/100+ ms execution research
+- detected-edge versus realized-edge decay measurement
+- partial-fill/open-exposure detection
+- emergency unwind simulation back to the anchor asset
+- capital-aware paper portfolio with drawdown and profit-factor metrics
+- unit tests and GitHub Actions CI
 
-## Edge model
-
-For Spot ↔ Perpetual, NovaArb models **basis capture potential**, not instant realized profit. Opening long spot + short perpetual is hedged exposure, but the basis is only realized when the legs later converge/close. NovaArb therefore reserves closing costs up front.
-
-NovaArb calculates:
+## Research pipeline
 
 ```text
-gross basis/dislocation
-- entry bid/ask spread cost
-- entry depth slippage
-- entry taker fees
-- latency reserve
-- conservative exit fee/market reserve
-- funding reserve (when relevant)
-= net capture potential
+public Binance books
+       ↓
+market-truth scanner
+       ↓
+approved theoretical opportunity
+       ↓
+sequential latency simulator
+       ↓
+actual later books for leg 1 → leg 2 → leg 3
+       ↓
+recovery model if a leg cannot complete
+       ↓
+paper portfolio / drawdown / profit factor
 ```
 
-Spread and slippage are deliberately separated for diagnostics and never subtracted twice.
+The important number is not how many opportunities are detected. It is how many remain profitable after sequential execution.
 
 ## Quick start
 
@@ -47,27 +54,36 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 python -m pip install -e '.[dev]'
 pytest
 
-novaarb scan --symbols BTCUSDT ETHUSDT BNBUSDT \
-  --notional 50 \
-  --min-edge-bps 2 \
-  --record data/session.jsonl.gz
+# Capture triangular market data and theoretical opportunities.
+novaarb triangle \
+  --notional 100 \
+  --record data/triangle.jsonl.gz
 
-novaarb replay data/session.jsonl.gz --min-edge-bps 2
+# Measure opportunity lifetime and route statistics.
+novaarb triangle-replay data/triangle.jsonl.gz
+
+# Compare the same approved signals under multiple latency assumptions.
+novaarb execution-replay data/triangle.jsonl.gz
+
+# Run capital-aware sequential paper execution with emergency unwind modeling.
+novaarb paper data/triangle.jsonl.gz \
+  --initial-balance 1000 \
+  --first-leg-ms 50 \
+  --inter-leg-ms 50
 ```
 
-The scanner uses **public market data only**. No Binance API key is required.
+All current exchange integration uses public market data. No Binance API key is required.
 
-## Project principles
+## Safety boundary
 
-1. Execution prices come from bid/ask depth, never `lastPrice`.
-2. Stale books fail closed.
-3. Costs are explicit and auditable.
-4. Research events are recorded, including rejected opportunities.
-5. Live trading is not added until replay and paper/shadow results prove an edge over multiple market regimes.
-6. API secrets must never be committed. Future credentials will be loaded from environment variables and trading-only permissions will be required.
+1. No live order endpoint exists.
+2. No withdrawal capability exists.
+3. Secrets are excluded by `.gitignore` and future credentials must come from environment variables.
+4. A partial sequence is never silently counted as a zero-loss trade; exposure is either explicitly recovered in simulation or the paper run halts.
+5. Live execution will not be introduced until long-running capture and shadow results demonstrate a repeatable net edge across different market regimes.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Current status
 
-**Milestone 1: market-truth layer — implemented. Milestone 2 research/replay — in progress.**
+**v0.4.0 — market truth, triangular discovery, deterministic replay, sequential execution, recovery and paper portfolio implemented. Real-market capture benchmarking is next.**

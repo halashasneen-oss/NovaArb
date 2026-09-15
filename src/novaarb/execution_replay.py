@@ -7,7 +7,6 @@ from statistics import median
 
 from novaarb.execution import (
     BookTimeline,
-    ExecutionFailure,
     LatencyProfile,
     SequentialFillResult,
     SequentialTriangleSimulator,

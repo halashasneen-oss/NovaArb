@@ -4,6 +4,9 @@ import argparse
 import asyncio
 from decimal import Decimal
 
+from novaarb.execution import LatencyProfile
+from novaarb.execution_replay import replay_triangle_execution
+from novaarb.paper import PaperPortfolioConfig, simulate_triangle_portfolio
 from novaarb.research import ResearchRecorder, ReplayAccumulator, iter_records, snapshot_from_record
 from novaarb.scanner import ScannerConfig, SpotPerpScanner
 from novaarb.symbols import fetch_spot_exchange_info
@@ -27,6 +30,12 @@ def _add_basis_args(parser: argparse.ArgumentParser, *, include_symbols: bool) -
     parser.add_argument("--spot-fee-bps", type=Decimal, default=Decimal("10"))
     parser.add_argument("--futures-fee-bps", type=Decimal, default=Decimal("5"))
     parser.add_argument("--exit-market-reserve-bps", type=Decimal, default=Decimal("2"))
+
+
+def _add_latency_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--first-leg-ms", type=int, default=50)
+    parser.add_argument("--inter-leg-ms", type=int, default=50)
+    parser.add_argument("--max-book-wait-ms", type=int, default=200)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -86,6 +95,23 @@ def _parser() -> argparse.ArgumentParser:
     triangle_replay.add_argument("path")
     triangle_replay.add_argument("--gap-tolerance-ms", type=int, default=300)
     triangle_replay.add_argument("--top-routes", type=int, default=10)
+
+    execution_replay = sub.add_parser(
+        "execution-replay",
+        help="reprice approved triangle signals under multiple latency profiles",
+    )
+    execution_replay.add_argument("path")
+
+    paper = sub.add_parser(
+        "paper",
+        help="run capital-aware sequential paper execution on a triangle research log",
+    )
+    paper.add_argument("path")
+    _add_latency_args(paper)
+    paper.add_argument("--initial-balance", type=Decimal, default=Decimal("1000"))
+    paper.add_argument("--route-cooldown-ms", type=int, default=500)
+    paper.add_argument("--recovery-delay-ms", type=int, default=50)
+    paper.add_argument("--recovery-book-wait-ms", type=int, default=250)
     return parser
 
 
@@ -225,6 +251,52 @@ def _triangle_replay(args: argparse.Namespace) -> None:
         )
 
 
+def _execution_replay(args: argparse.Namespace) -> None:
+    summary = replay_triangle_execution(args.path)
+    print("NovaArb sequential execution replay")
+    print(f"snapshots: {summary.snapshots}")
+    print(f"approved signals: {summary.approved_signals}")
+    for stats in summary.profiles:
+        print(
+            f"{stats.profile_name}: complete={stats.completed}/{stats.detected_signals} "
+            f"profitable={stats.profitable} losing={stats.losing} failed={stats.failed} "
+            f"median_edge={stats.median_realized_edge_bps:.3f}bps "
+            f"median_decay={stats.median_edge_decay_bps:.3f}bps "
+            f"net={stats.total_net_profit:.8f}"
+        )
+
+
+def _paper(args: argparse.Namespace) -> None:
+    latency = LatencyProfile(
+        "cli",
+        args.first_leg_ms,
+        args.inter_leg_ms,
+        args.max_book_wait_ms,
+    )
+    config = PaperPortfolioConfig(
+        initial_balance=args.initial_balance,
+        route_cooldown_ms=args.route_cooldown_ms,
+        attempt_recovery=True,
+        halt_on_unrecovered_leg_risk=True,
+        recovery_delay_ms=args.recovery_delay_ms,
+        recovery_book_wait_ms=args.recovery_book_wait_ms,
+    )
+    summary = simulate_triangle_portfolio(args.path, latency=latency, portfolio=config)
+    print("NovaArb paper portfolio summary")
+    print(f"trades: {summary.trades}")
+    print(f"wins/losses: {summary.profitable_trades}/{summary.losing_trades}")
+    print(f"initial/final: {summary.initial_balance} -> {summary.final_balance}")
+    print(f"net: {summary.total_net_profit} return={summary.return_pct:.4f}%")
+    print(f"max drawdown: {summary.max_drawdown_pct:.4f}%")
+    print(f"profit factor: {summary.profit_factor}")
+    print(
+        f"execution failures={summary.failed_executions} "
+        f"recovered={summary.recovered_exposures} "
+        f"unrecovered={summary.unrecovered_exposures}"
+    )
+    print(f"halted_on_leg_risk: {summary.halted_on_leg_risk}")
+
+
 def main() -> None:
     args = _parser().parse_args()
     try:
@@ -234,6 +306,10 @@ def main() -> None:
             asyncio.run(_triangle(args))
         elif args.command == "triangle-replay":
             _triangle_replay(args)
+        elif args.command == "execution-replay":
+            _execution_replay(args)
+        elif args.command == "paper":
+            _paper(args)
         else:
             _replay(args)
     except KeyboardInterrupt:
