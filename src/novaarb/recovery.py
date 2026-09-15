@@ -52,11 +52,11 @@ class EmergencyUnwinder:
         *,
         rules: tuple[SymbolRules, ...],
         taker_fee_bps: Decimal,
-        policy: RecoveryPolicy = RecoveryPolicy(),
+        policy: RecoveryPolicy | None = None,
     ) -> None:
         self.rules_by_symbol = {rule.symbol: rule for rule in rules}
         self.converter = SpotConverter(taker_fee_bps=taker_fee_bps)
-        self.policy = policy
+        self.policy = policy or RecoveryPolicy()
 
     def recover(
         self,
