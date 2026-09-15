@@ -9,6 +9,7 @@ from statistics import median
 
 from novaarb.allocator import AllocationConfig, CapitalAwareAllocator, ResearchCandidate
 from novaarb.cross_venue import CrossVenueOpportunity, VenueCostProfile
+from novaarb.cross_venue_execution import reprice_committed_cross_venue
 from novaarb.domain import MarketType, TEN_THOUSAND, ZERO
 from novaarb.inventory import ExecutedCrossVenueTrade
 from novaarb.research import ResearchRecorder
@@ -29,16 +30,19 @@ from novaarb.shadow_scanner import (
 @dataclass(frozen=True, slots=True)
 class ShadowLiveConfig:
     allocation_window_ms: int = 100
+    execution_delay_ms: int = 50
     heartbeat_interval_ms: int = 5_000
     max_data_staleness_ms: int = 2_000
 
     def __post_init__(self) -> None:
-        if self.allocation_window_ms < 0:
-            raise ValueError("allocation_window_ms cannot be negative")
+        if min(
+            self.allocation_window_ms,
+            self.execution_delay_ms,
+            self.max_data_staleness_ms,
+        ) < 0:
+            raise ValueError("shadow live timing values cannot be negative")
         if self.heartbeat_interval_ms <= 0:
             raise ValueError("heartbeat_interval_ms must be positive")
-        if self.max_data_staleness_ms < 0:
-            raise ValueError("max_data_staleness_ms cannot be negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +83,7 @@ class ShadowLiveCoordinator:
         self.engine = engine
         self.inventory: MultiAssetInventoryLedger = engine.inventory
         self.quote_asset = quote_asset.upper()
+        self.cost_profiles = costs
         self.costs = {item.venue: item for item in costs}
         if len(self.costs) != len(costs) or len(self.costs) < 2:
             raise ValueError("live shadow costs require at least two unique venues")
@@ -237,20 +242,25 @@ class ShadowLiveCoordinator:
                 decayed += 1
                 continue
 
-            realized = self.engine.strategy.evaluate_direction(
+            realized = reprice_committed_cross_venue(
+                detected,
                 buy_book=buy_book,
                 sell_book=sell_book,
+                costs=self.cost_profiles,
                 now_ms=timestamp_ms,
             )
             if realized is None:
                 self.decayed_before_execution += 1
                 decayed += 1
                 continue
-            inventories = self.engine._instrument_inventories(buy_book)
-            approval = self.engine.strategy.assess(realized, inventories=inventories)
-            if not approval.approved:
-                self.decayed_before_execution += 1
-                decayed += 1
+            if (
+                max(realized.buy_book_age_ms, realized.sell_book_age_ms)
+                > self.engine.strategy.config.max_book_age_ms
+                or realized.book_skew_ms > self.engine.strategy.config.max_book_skew_ms
+            ):
+                self.risk_halts += 1
+                batch_halts += 1
+                self.kill_reasons[ShadowKillSwitchReason.DATA_UNHEALTHY.value] += 1
                 continue
 
             current_mark = self.portfolio_mark()
@@ -408,6 +418,8 @@ async def run_public_shadow_session(
                 batch.append(await asyncio.wait_for(queue.get(), timeout=remaining))
             except TimeoutError:
                 break
+        if coordinator.config.execution_delay_ms:
+            await asyncio.sleep(coordinator.config.execution_delay_ms / 1000)
         coordinator.process_batch(tuple(batch))
         if metrics_recorder is not None and loop.time() >= next_heartbeat:
             metrics_recorder.append_metadata("shadow_heartbeat", coordinator.metrics())
