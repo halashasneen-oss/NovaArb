@@ -8,7 +8,7 @@ from novaarb.allocator import AllocationConfig, AllocationReason, CapitalAwareAl
 from novaarb.cross_venue import CrossVenueOpportunity
 from novaarb.domain import ArbitrageOpportunity
 from novaarb.funding import FundingCarryOpportunity
-from novaarb.triangular import TriangularOpportunity
+from novaarb.triangular import ConversionSide, TriangularOpportunity
 
 
 CROSS_VENUE_STRATEGY = "prefunded_cross_venue"
@@ -50,6 +50,21 @@ def _pair(base_asset: str, quote_asset: str) -> str:
 
 def _unique_resources(resources: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(resources))
+
+
+def _triangle_resources(
+    opportunity: TriangularOpportunity,
+    *,
+    venue: str,
+) -> tuple[str, ...]:
+    resources: list[str] = []
+    for leg in opportunity.legs:
+        if leg.side is ConversionSide.BUY_BASE:
+            pair = _pair(leg.to_asset, leg.from_asset)
+        else:
+            pair = _pair(leg.from_asset, leg.to_asset)
+        resources.append(f"spot:{venue}:{pair}")
+    return _unique_resources(tuple(resources))
 
 
 def cross_venue_envelope(
@@ -157,9 +172,6 @@ def triangular_envelope(
 ) -> CandidateEnvelope:
     """Normalize a closed three-leg Spot cycle into shared allocator resources."""
 
-    resources = _unique_resources(
-        tuple(f"spot:{venue}:{symbol.upper()}" for symbol in opportunity.route.symbols)
-    )
     candidate = ResearchCandidate(
         opportunity_id=(
             f"triangle:{opportunity.created_time_ms}:{sequence}:"
@@ -169,7 +181,7 @@ def triangular_envelope(
         capital_required_usdt=opportunity.starting_amount,
         expected_net_profit_usdt=opportunity.net_profit,
         expected_edge_bps=opportunity.net_edge_bps,
-        resource_keys=resources,
+        resource_keys=_triangle_resources(opportunity, venue=venue),
         observed_at_ms=opportunity.created_time_ms,
     )
     return CandidateEnvelope(candidate, TRIANGULAR_STRATEGY, opportunity)
@@ -183,9 +195,6 @@ def synthetic_envelope(
 ) -> CandidateEnvelope:
     """Normalize an executable synthetic-quote cycle represented by a triangle."""
 
-    resources = _unique_resources(
-        tuple(f"spot:{venue}:{symbol.upper()}" for symbol in opportunity.route.symbols)
-    )
     candidate = ResearchCandidate(
         opportunity_id=(
             f"synthetic:{opportunity.created_time_ms}:{sequence}:"
@@ -195,7 +204,7 @@ def synthetic_envelope(
         capital_required_usdt=opportunity.starting_amount,
         expected_net_profit_usdt=opportunity.net_profit,
         expected_edge_bps=opportunity.net_edge_bps,
-        resource_keys=resources,
+        resource_keys=_triangle_resources(opportunity, venue=venue),
         observed_at_ms=opportunity.created_time_ms,
     )
     return CandidateEnvelope(candidate, SYNTHETIC_STRATEGY, opportunity)
