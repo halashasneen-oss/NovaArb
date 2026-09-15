@@ -34,6 +34,7 @@
 - [ ] multi-day and multi-week real-market capture benchmark
 - [ ] deployment-host latency baseline
 - [x] machine-readable dashboard metrics feed for venue health
+- [x] machine-readable shadow portfolio metrics feed
 
 ## Milestone 5 — broader single-venue arbitrage graph
 - [x] USDT/USDC/FDUSD synthetic quote paths
@@ -62,13 +63,17 @@
 - [ ] cross-venue fee-tier and rebalance-cost sensitivity matrix
 
 ## Milestone 7 — shadow portfolio research
-- [ ] multi-instrument portfolio replay across strategies and venues
-- [ ] shared capital/inventory allocator across Spot, funding and cross-venue research
+- [x] multi-instrument cross-venue portfolio replay on one shared timeline
+- [x] shared capital allocator plus quantitative multi-asset inventory enforcement
+- [x] reprice selected opportunities at allocation time to expose edge decay
 - [x] venue concentration limits
 - [x] venue inventory-weight drift limits
 - [x] daily loss and abnormal-data research kill switches
-- [ ] long-running shadow operation with no real orders
-- [ ] consolidated operator/dashboard portfolio metrics feed
+- [x] foreground long-running public shadow runner with no order/transfer client
+- [x] heartbeat/operator metrics recording and final session metrics
+- [ ] integrate funding and other strategy families into the same shadow candidate bus
+- [ ] multi-day shadow-operation evidence benchmark on the intended deployment host
+- [ ] predefined quantitative acceptance gate for any future authenticated execution work
 
 ## Milestone 8 — guarded live execution
 Only after paper/shadow evidence passes predefined acceptance criteria:
