@@ -190,7 +190,10 @@ class CrossVenueStrategy:
     ) -> CrossVenueDecision:
         if opportunity.buy_venue == opportunity.sell_venue:
             return CrossVenueDecision(False, CrossVenueReason.SAME_VENUE)
-        if max(opportunity.buy_book_age_ms, opportunity.sell_book_age_ms) > self.config.max_book_age_ms:
+        if (
+            max(opportunity.buy_book_age_ms, opportunity.sell_book_age_ms)
+            > self.config.max_book_age_ms
+        ):
             return CrossVenueDecision(False, CrossVenueReason.STALE_BOOK)
         if opportunity.book_skew_ms > self.config.max_book_skew_ms:
             return CrossVenueDecision(False, CrossVenueReason.BOOK_SKEW)
