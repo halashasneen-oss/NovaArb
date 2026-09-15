@@ -19,6 +19,7 @@ There is intentionally **no authenticated order client** in the repository. The 
 - executable USDT ↔ USDC/FDUSD synthetic quote path planner
 - conservative positive-funding long-Spot/short-Perpetual carry scanner
 - self-contained funding capture and deterministic projected-carry replay
+- modeled-realized funding settlement/holding-period replay against captured rates and later books
 - pre-funded cross-venue opportunity model with per-venue fees and reserves
 - Binance ↔ Bybit public cross-venue scanning
 - latency-aware cross-venue replay against later observed books
@@ -33,6 +34,7 @@ There is intentionally **no authenticated order client** in the repository. The 
 - daily-loss and abnormal-data shadow kill switches
 - explicit quantitative shadow-evidence acceptance gate
 - venue/symbol feed-health analytics for delay, stale gaps and out-of-order events
+- WebSocket reconnect/disconnect, rate-limit, queue-drop and backoff telemetry
 - machine-readable JSON metrics output for monitoring/dashboard ingestion
 - research-only inventory rebalancing planner with transfer-cost estimates
 - exchange-rule aware quantity, notional, dust and fee handling
@@ -56,7 +58,7 @@ public market data from one or more venues
        ↓
 normalized market-truth books
        ↓
-venue/symbol health gates
+venue/symbol health + transport telemetry
        ↓
 theoretical opportunities from multiple strategy families
        ↓
@@ -73,6 +75,8 @@ shadow risk guard: concentration / drift / daily loss / abnormal data
 multi-asset inventory accounting + conservative paper PnL
        ↓
 edge-decay / survival / fee sensitivity / rebalance-cost evidence
+       ↓
+funding settlement/exit replay where applicable
        ↓
 quantitative acceptance gate before any future authenticated work
 ```
@@ -113,9 +117,12 @@ novaarb-fee-report data/triangle.jsonl.gz
 # Direct-vs-synthetic quote cycles such as BTC/USDT vs BTC/USDC × USDC/USDT.
 novaarb-synthetic-scan --alternative-quotes USDC FDUSD
 
-# Public funding carry research. This reports projected carry, not realized profit.
+# Public funding carry research. Scanner/replay first report projected carry.
 novaarb-funding-scan --symbols BTCUSDT ETHUSDT --record data/funding.jsonl.gz
 novaarb-funding-replay data/funding.jsonl.gz
+
+# Reconstruct approved funding entries through captured settlement rates and later exits.
+novaarb-funding-settlement-replay data/funding.jsonl.gz
 
 # Public Binance ↔ Bybit pre-funded cross-venue research.
 novaarb-cross-venue-scan \
@@ -163,6 +170,7 @@ novaarb-shadow-replay data/cross-multi.jsonl.gz \
 novaarb-shadow-gate data/shadow-metrics.json --observation-hours 168
 
 # Foreground public-data shadow operation. It records hypothetical metrics only.
+# Heartbeat metrics also include connection/disconnect/rate-limit/queue-drop telemetry.
 novaarb-shadow-run \
   --instrument BTC/USDT \
   --instrument ETH/USDT \
@@ -185,13 +193,13 @@ Cross-exchange opportunities are modeled as **pre-funded**. Quote inventory must
 
 The multi-asset shadow ledger extends this from one symbol to many assets on the same venues. A shared capital allocator selects among simultaneous candidates, then each selected cross-venue candidate is repriced against the latest observed public books before the hypothetical fill. Quantitative inventory is checked again before every shadow fill.
 
-A common candidate bus can now rank cross-venue and projected funding opportunities together and declare shared market resources so the allocator cannot silently double-allocate the same Spot market. Funding remains projected research carry until a settlement/holding-period/exit model proves realized economics.
+A common candidate bus can rank cross-venue and projected funding opportunities together and declare shared market resources so the allocator cannot silently double-allocate the same Spot market. Funding scanner results remain projected until the settlement replay reconstructs scheduled public rates and later Spot/Perpetual exits. The settlement replay is modeled-realized research evidence, not an exchange account statement, and it is not yet embedded as a persistent position lifecycle inside the unified shadow portfolio.
 
 The portfolio can be marked into a common quote currency and evaluated for venue concentration, target-weight drift, daily realized loss and abnormal-data health before a shadow decision is allowed. Conservative PnL retains execution and rebalance reserves rather than treating them as free profit.
 
 Cross-venue survival analysis measures signal persistence separately from fill replay. A sensitivity matrix then reuses the same recorded books under alternate taker-fee and modeled inventory-transfer costs. This avoids choosing assumptions after seeing a favorable result.
 
-The foreground shadow runner can keep collecting public books and heartbeat metrics for an operator-defined period or until interrupted. This is infrastructure for multi-day evidence collection; the repository does not claim that a multi-day profitability benchmark has already been completed.
+The foreground shadow runner can keep collecting public books and heartbeat metrics for an operator-defined period or until interrupted. The heartbeat evidence now includes connection attempts, disconnects, messages, snapshots, parse errors, rate-limit events, queue drops and reconnect backoff. This is infrastructure for multi-day evidence collection; the repository does not claim that a multi-day profitability benchmark has already been completed.
 
 ## Quantitative evidence gate
 
@@ -206,7 +214,7 @@ Those thresholds are explicit and configurable. Passing them is **necessary rese
 3. Pre-funded venue balances are hypothetical research inventory, not connected account balances.
 4. Secrets are excluded by `.gitignore`; future credentials must come from environment variables.
 5. Partial sequences are never silently counted as zero-loss trades; exposure is explicitly modeled.
-6. Funding results are labeled as projected carry until a holding/settlement/exit replay proves realized economics.
+6. Funding settlement replay is modeled from captured public rates/books and is not treated as an audited exchange account statement.
 7. Shadow kill switches can halt research decisions on unhealthy data, daily-loss limits, venue concentration or inventory-weight drift.
 8. The long-running shadow command consumes public data only and cannot submit exchange orders.
 9. Passing the shadow acceptance gate does not automatically authorize authenticated execution.
@@ -216,4 +224,4 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/ROADMAP.md`](docs/
 
 ## Current status
 
-**v0.10.0 — NovaArb now adds cross-venue survival curves, fee/rebalance sensitivity analysis, a shared cross-venue/funding research candidate bus, and an explicit quantitative evidence gate on top of its multi-instrument public shadow stack. The remaining research requirement is sustained real-market evidence on the intended deployment host plus realized funding settlement/exit modeling before any authenticated execution work is considered.**
+**v0.11.0 — NovaArb adds modeled-realized funding settlement/holding-period replay and embeds WebSocket disconnect, rate-limit, queue-drop and reconnect telemetry into public shadow evidence. Cross-venue survival/sensitivity, the shared candidate bus and the quantitative acceptance gate remain in place. The next major requirement is sustained multi-day real-market evidence and deployment-host latency measurement, followed by integrating stateful funding positions into the unified shadow portfolio before any authenticated execution work is considered.**
