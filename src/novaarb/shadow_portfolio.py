@@ -7,6 +7,7 @@ from statistics import median
 
 from novaarb.allocator import AllocationConfig, CapitalAwareAllocator, ResearchCandidate
 from novaarb.cross_venue import CrossVenueConfig, CrossVenueOpportunity, VenueCostProfile
+from novaarb.cross_venue_execution import reprice_committed_cross_venue
 from novaarb.domain import MarketType, TEN_THOUSAND, ZERO
 from novaarb.inventory import ExecutedCrossVenueTrade
 from novaarb.research import iter_records, snapshot_from_record
@@ -86,7 +87,6 @@ class ShadowPortfolioSummary:
 @dataclass(frozen=True, slots=True)
 class _PendingSignal:
     event: ShadowScannerEvent
-    observed_at_ms: int
     candidate: ResearchCandidate
 
 
@@ -113,12 +113,18 @@ def _mapping_key(venue: str, symbol: str, market: MarketType) -> tuple[str, str,
 
 def _build_instrument_map(
     instruments: tuple[VenueInstrument, ...],
+    *,
+    quote_asset: str,
 ) -> dict[tuple[str, str, MarketType], Instrument]:
     if not instruments:
         raise ValueError("at least one venue instrument is required")
     mapping: dict[tuple[str, str, MarketType], Instrument] = {}
     canonical_venues: dict[str, set[str]] = {}
     for item in instruments:
+        if item.instrument.market is not MarketType.SPOT:
+            raise ValueError("shadow portfolio replay currently supports Spot instruments only")
+        if item.instrument.quote_asset != quote_asset:
+            raise ValueError("all shadow replay instruments must share the portfolio quote asset")
         key = _mapping_key(item.venue, item.venue_symbol, item.instrument.market)
         if key in mapping:
             raise ValueError(f"duplicate replay instrument mapping for {key}")
@@ -245,12 +251,16 @@ def replay_shadow_portfolio(
 ) -> ShadowPortfolioSummary:
     """Replay a multi-instrument public capture through one shared shadow portfolio."""
 
+    quote = quote_asset.upper()
     resolved_strategy = strategy_config or CrossVenueConfig()
     resolved_risk = risk_config or ShadowRiskConfig()
     resolved_replay = replay_config or ShadowPortfolioReplayConfig()
-    instrument_map = _build_instrument_map(instruments)
+    instrument_map = _build_instrument_map(instruments, quote_asset=quote)
     costs_by_venue = _cost_map(costs)
     venues = tuple(sorted(costs_by_venue))
+    mapped_venues = {item.venue.lower() for item in instruments}
+    if mapped_venues != set(venues):
+        raise ValueError("replay instrument venues must match venue cost profiles")
     balance_venues = {item.venue for item in balances}
     if not set(venues) <= balance_venues:
         raise ValueError("every venue cost profile requires shadow inventory balances")
@@ -305,22 +315,32 @@ def replay_shadow_portfolio(
     max_drawdown = ZERO
 
     def mark_portfolio() -> PortfolioMark | None:
-        prices = _current_prices(engine.books, quote_asset=quote_asset)
-        required = _required_mark_assets(inventory.snapshot(), quote_asset=quote_asset)
+        prices = _current_prices(engine.books, quote_asset=quote)
+        required = _required_mark_assets(inventory.snapshot(), quote_asset=quote)
         if not required <= set(prices):
             return None
         return inventory.mark_to_quote(
-            quote_asset=quote_asset,
+            quote_asset=quote,
             prices_in_quote=prices,
         )
+
+    def update_drawdown() -> None:
+        nonlocal max_drawdown
+        nonlocal peak_value
+        mark = mark_portfolio()
+        if mark is None:
+            return
+        if peak_value is None:
+            peak_value = mark.total_value_quote
+        else:
+            peak_value = max(peak_value, mark.total_value_quote)
+        max_drawdown = max(max_drawdown, peak_value - mark.total_value_quote)
 
     def flush(now_ms: int) -> None:
         nonlocal allocator_rejections
         nonlocal allocator_selected
         nonlocal decayed_before_execution
         nonlocal inventory_rejections
-        nonlocal max_drawdown
-        nonlocal peak_value
         nonlocal risk_halts
         nonlocal total_profit
         if not pending:
@@ -355,8 +375,8 @@ def replay_shadow_portfolio(
         for decision in result.decisions:
             if decision.selected:
                 allocator_selected += 1
-                stats = symbol_stats[decision.candidate.resource_keys[0].split(":", 1)[1]]
-                stats.selected += 1
+                instrument_key = decision.candidate.resource_keys[0].split(":", 1)[1]
+                symbol_stats[instrument_key].selected += 1
             else:
                 allocator_rejections += 1
                 allocation_reasons[decision.reason.value] += 1
@@ -371,18 +391,23 @@ def replay_shadow_portfolio(
                 decayed_before_execution += 1
                 continue
 
-            realized = engine.strategy.evaluate_direction(
+            realized = reprice_committed_cross_venue(
+                detected,
                 buy_book=buy_book,
                 sell_book=sell_book,
+                costs=costs,
                 now_ms=now_ms,
             )
             if realized is None:
                 decayed_before_execution += 1
                 continue
-            inventories = engine._instrument_inventories(buy_book)
-            realized_decision = engine.strategy.assess(realized, inventories=inventories)
-            if not realized_decision.approved:
-                decayed_before_execution += 1
+            if (
+                max(realized.buy_book_age_ms, realized.sell_book_age_ms)
+                > resolved_strategy.max_book_age_ms
+                or realized.book_skew_ms > resolved_strategy.max_book_skew_ms
+            ):
+                risk_halts += 1
+                kill_reasons[ShadowKillSwitchReason.DATA_UNHEALTHY.value] += 1
                 continue
 
             current_mark = mark_portfolio()
@@ -461,23 +486,17 @@ def replay_shadow_portfolio(
             stats.profit += conservative_profit
             assert stats.realized_edges is not None
             stats.realized_edges.append(realized.net_edge_bps)
-
-            updated_mark = mark_portfolio()
-            if updated_mark is not None:
-                if peak_value is None:
-                    peak_value = updated_mark.total_value_quote
-                else:
-                    peak_value = max(peak_value, updated_mark.total_value_quote)
-                max_drawdown = max(
-                    max_drawdown,
-                    peak_value - updated_mark.total_value_quote,
-                )
+            update_drawdown()
 
         pending.clear()
 
     for book in normalized_books:
         snapshots += 1
         now_ms = book.snapshot.received_time_ms
+        latest_received_ms[book.venue] = now_ms
+        events = engine.process_book(book, now_ms=now_ms)
+        update_drawdown()
+
         if (
             window_started_ms is not None
             and now_ms - window_started_ms >= resolved_replay.allocation_window_ms
@@ -485,8 +504,7 @@ def replay_shadow_portfolio(
             flush(now_ms)
             window_started_ms = None
 
-        latest_received_ms[book.venue] = now_ms
-        for event in engine.process_book(book, now_ms=now_ms):
+        for event in events:
             if not event.decision.approved:
                 continue
             opportunity = event.opportunity
@@ -509,12 +527,10 @@ def replay_shadow_portfolio(
             )
             stats.detected += 1
             sequence += 1
-            candidate = _candidate_from_event(event, sequence=sequence)
             pending.append(
                 _PendingSignal(
                     event=event,
-                    observed_at_ms=now_ms,
-                    candidate=candidate,
+                    candidate=_candidate_from_event(event, sequence=sequence),
                 )
             )
             if window_started_ms is None:
@@ -525,8 +541,7 @@ def replay_shadow_portfolio(
     ending_mark = mark_portfolio()
     if ending_mark is None:
         raise ValueError("cannot mark ending shadow portfolio from captured instruments")
-    if peak_value is None:
-        peak_value = ending_mark.total_value_quote
+    update_drawdown()
 
     summaries = tuple(
         ShadowSymbolSummary(
