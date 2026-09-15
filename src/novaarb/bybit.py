@@ -8,6 +8,11 @@ from decimal import Decimal
 from typing import Any
 
 from novaarb.domain import BookLevel, MarketType, OrderBookSnapshot, ZERO
+from novaarb.stream_telemetry import (
+    StreamTelemetry,
+    looks_rate_limited,
+    payload_looks_rate_limited,
+)
 from novaarb.venue import NormalizedBook, VenueInstrument
 
 
@@ -116,6 +121,7 @@ class BybitDepthStream:
         symbols: tuple[str, ...],
         market: MarketType,
         depth: int = 50,
+        telemetry: StreamTelemetry | None = None,
     ) -> None:
         if not symbols:
             raise ValueError("at least one symbol is required")
@@ -124,6 +130,7 @@ class BybitDepthStream:
         self.symbols = tuple(symbol.upper() for symbol in symbols)
         self.market = market
         self.depth = depth
+        self.telemetry = telemetry
 
     @property
     def url(self) -> str:
@@ -144,6 +151,8 @@ class BybitDepthStream:
         backoff = 1.0
 
         while True:
+            if self.telemetry is not None:
+                self.telemetry.record_connection_attempt("bybit", self.market)
             try:
                 async with websockets.connect(
                     self.url,
@@ -152,11 +161,30 @@ class BybitDepthStream:
                     close_timeout=5,
                     max_queue=2048,
                 ) as websocket:
+                    if self.telemetry is not None:
+                        self.telemetry.record_connected(
+                            "bybit",
+                            self.market,
+                            timestamp_ms=int(time.time() * 1000),
+                        )
                     await websocket.send(json.dumps({"op": "subscribe", "args": topics}))
                     backoff = 1.0
                     async for raw in websocket:
                         received_ms = int(time.time() * 1000)
-                        payload = json.loads(raw)
+                        if self.telemetry is not None:
+                            self.telemetry.record_message(
+                                "bybit",
+                                self.market,
+                                timestamp_ms=received_ms,
+                            )
+                        try:
+                            payload = json.loads(raw)
+                        except Exception:
+                            if self.telemetry is not None:
+                                self.telemetry.record_parse_error("bybit", self.market)
+                            raise
+                        if self.telemetry is not None and payload_looks_rate_limited(payload):
+                            self.telemetry.record_rate_limit("bybit", self.market)
                         data = payload.get("data")
                         if not isinstance(data, dict):
                             continue
@@ -164,15 +192,45 @@ class BybitDepthStream:
                         state = states.get(symbol)
                         if state is None:
                             continue
-                        snapshot = state.apply(
-                            payload,
-                            received_time_ms=received_ms,
-                        )
+                        try:
+                            snapshot = state.apply(
+                                payload,
+                                received_time_ms=received_ms,
+                            )
+                        except Exception:
+                            if self.telemetry is not None:
+                                self.telemetry.record_parse_error("bybit", self.market)
+                            raise
                         if snapshot is not None:
+                            if self.telemetry is not None:
+                                self.telemetry.record_snapshot(
+                                    "bybit",
+                                    self.market,
+                                    timestamp_ms=received_ms,
+                                )
                             yield snapshot
+                    if self.telemetry is not None:
+                        self.telemetry.record_disconnect(
+                            "bybit",
+                            self.market,
+                            timestamp_ms=int(time.time() * 1000),
+                        )
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
+                if self.telemetry is not None:
+                    self.telemetry.record_disconnect(
+                        "bybit",
+                        self.market,
+                        timestamp_ms=int(time.time() * 1000),
+                    )
+                    if looks_rate_limited(exc):
+                        self.telemetry.record_rate_limit("bybit", self.market)
+                    self.telemetry.record_backoff(
+                        "bybit",
+                        self.market,
+                        milliseconds=int(backoff * 1000),
+                    )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
 
@@ -181,6 +239,9 @@ class BybitPublicVenueAdapter:
     """Normalizes Bybit public books behind the generic venue adapter contract."""
 
     venue = "bybit"
+
+    def __init__(self, *, telemetry: StreamTelemetry | None = None) -> None:
+        self.telemetry = telemetry
 
     async def books(
         self,
@@ -207,10 +268,13 @@ class BybitPublicVenueAdapter:
             stream = BybitDepthStream(
                 symbols=tuple(item.venue_symbol for item in items),
                 market=market,
+                telemetry=self.telemetry,
             )
             async for snapshot in stream.snapshots():
                 if queue.full():
                     _ = queue.get_nowait()
+                    if self.telemetry is not None:
+                        self.telemetry.record_queue_drop(self.venue, market)
                 await queue.put(snapshot)
 
         try:
