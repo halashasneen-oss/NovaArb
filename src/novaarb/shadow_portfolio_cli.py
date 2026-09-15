@@ -73,6 +73,7 @@ def _parser() -> argparse.ArgumentParser:
         default=True,
         help="include capture venue-health evidence in JSON output",
     )
+    parser.add_argument("--output", default=None, help="optional JSON metrics output path")
     return parser
 
 
@@ -174,7 +175,15 @@ def main() -> None:
             ),
         )
         health = analyze_venue_health(args.capture) if args.health else None
-        print(json.dumps(build_shadow_metrics(summary, health=health), indent=2, sort_keys=True))
+        encoded = json.dumps(
+            build_shadow_metrics(summary, health=health),
+            indent=2,
+            sort_keys=True,
+        )
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as handle:
+                handle.write(encoded + "\n")
+        print(encoded)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
