@@ -40,8 +40,8 @@ def _costs() -> tuple[VenueCostProfile, ...]:
 
 def _inventories() -> tuple[VenueInventory, ...]:
     return (
-        VenueInventory("alpha", Decimal("1"), Decimal("1000")),
-        VenueInventory("beta", Decimal("1"), Decimal("1000")),
+        VenueInventory("alpha", Decimal("2"), Decimal("1000")),
+        VenueInventory("beta", Decimal("2"), Decimal("1000")),
     )
 
 
@@ -84,9 +84,9 @@ def test_cross_venue_replay_reprices_after_latency_and_tracks_inventory(tmp_path
     assert summary.median_realized_edge_bps < summary.median_detected_edge_bps
     assert summary.median_edge_decay_bps > 0
     balances = {item.venue: item for item in summary.ending_inventories}
-    assert balances["alpha"].base_available > Decimal("1")
+    assert balances["alpha"].base_available > Decimal("2")
     assert balances["alpha"].quote_available < Decimal("1000")
-    assert balances["beta"].base_available < Decimal("1")
+    assert balances["beta"].base_available < Decimal("2")
     assert balances["beta"].quote_available > Decimal("1000")
     assert summary.rebalance_plan.instructions
     assert summary.rebalance_plan.total_estimated_cost_quote > 0
