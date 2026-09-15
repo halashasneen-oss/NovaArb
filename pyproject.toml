@@ -34,6 +34,7 @@ novaarb-cross-venue-scan = "novaarb.cross_venue_cli:main"
 novaarb-cross-venue-replay = "novaarb.cross_venue_replay_cli:main"
 novaarb-venue-health = "novaarb.venue_health_cli:main"
 novaarb-shadow-replay = "novaarb.shadow_portfolio_cli:main"
+novaarb-shadow-run = "novaarb.shadow_live_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
