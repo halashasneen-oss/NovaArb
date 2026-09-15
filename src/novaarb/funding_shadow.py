@@ -198,12 +198,17 @@ class FundingShadowBook:
             if symbol == snapshot.symbol and target < snapshot.next_funding_time_ms
         )
         if previous_targets:
-            self.next_targets[(snapshot.symbol, previous_targets[-1])] = snapshot.next_funding_time_ms
+            self.next_targets[(snapshot.symbol, previous_targets[-1])] = (
+                snapshot.next_funding_time_ms
+            )
 
         for position in self.positions.values():
             if position.symbol != snapshot.symbol or position.ready_to_close:
                 continue
-            if position.next_funding_time_ms == 0 and snapshot.next_funding_time_ms > position.opened_at_ms:
+            if (
+                position.next_funding_time_ms == 0
+                and snapshot.next_funding_time_ms > position.opened_at_ms
+            ):
                 position.next_funding_time_ms = snapshot.next_funding_time_ms
 
     def settle_due(self, *, now_ms: int) -> tuple[FundingShadowSettlement, ...]:
@@ -284,9 +289,15 @@ class FundingShadowBook:
             raise ValueError("funding exit requires Spot book")
         if perpetual_book.market is not MarketType.PERPETUAL:
             raise ValueError("funding exit requires Perpetual book")
-        if max(spot_book.age_ms(now_ms), perpetual_book.age_ms(now_ms)) > self.config.max_book_age_ms:
+        if (
+            max(spot_book.age_ms(now_ms), perpetual_book.age_ms(now_ms))
+            > self.config.max_book_age_ms
+        ):
             raise ValueError("funding exit books are stale")
-        if abs(spot_book.received_time_ms - perpetual_book.received_time_ms) > self.config.max_book_skew_ms:
+        if (
+            abs(spot_book.received_time_ms - perpetual_book.received_time_ms)
+            > self.config.max_book_skew_ms
+        ):
             raise ValueError("funding exit book skew exceeds limit")
 
         try:
