@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 
 from novaarb.allocator import AllocationConfig, AllocationReason
@@ -128,7 +129,10 @@ def test_funding_shadow_reserves_capital_settles_and_releases_realized_pnl() -> 
     assert close.realized_edge_bps > 0
     assert book.open_positions == 0
     assert book.reserved_capital_quote == 0
-    assert inventory.balance("binance", "USDT") == Decimal("1000") + close.realized_net_profit_quote
+    assert (
+        inventory.balance("binance", "USDT")
+        == Decimal("1000") + close.realized_net_profit_quote
+    )
 
 
 def test_open_funding_position_exposes_allocator_locks_for_new_candidates() -> None:
@@ -149,13 +153,11 @@ def test_open_funding_position_exposes_allocator_locks_for_new_candidates() -> N
     )
 
     competing = funding_envelope(
-        FundingCarryOpportunity(
-            **{
-                **_opportunity().__dict__,
-                "expected_net_profit_usdt": Decimal("1"),
-                "expected_net_edge_bps": Decimal("60"),
-                "created_time_ms": 1_100,
-            }
+        replace(
+            _opportunity(),
+            expected_net_profit_usdt=Decimal("1"),
+            expected_net_edge_bps=Decimal("60"),
+            created_time_ms=1_100,
         ),
         base_asset="BTC",
         quote_asset="USDT",
