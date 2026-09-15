@@ -16,6 +16,9 @@ from novaarb.execution_replay import (
 from novaarb.paper import PaperPortfolioConfig, simulate_triangle_portfolio
 
 
+DEFAULT_INITIAL_BALANCE = Decimal("1000")
+
+
 @dataclass(frozen=True, slots=True)
 class ProfileEvidence:
     profile_name: str
@@ -51,7 +54,7 @@ class TriangleResearchReport:
 def build_triangle_report(
     path: str,
     *,
-    initial_balance: Decimal = Decimal("1000"),
+    initial_balance: Decimal = DEFAULT_INITIAL_BALANCE,
     route_cooldown_ms: int = 500,
     profiles: tuple[LatencyProfile, ...] = DEFAULT_LATENCY_PROFILES,
     top_routes: int = 10,
@@ -138,7 +141,7 @@ def report_json(report: TriangleResearchReport) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build a consolidated NovaArb research report")
     parser.add_argument("path", help="self-contained triangular JSONL or JSONL.GZ capture")
-    parser.add_argument("--initial-balance", type=Decimal, default=Decimal("1000"))
+    parser.add_argument("--initial-balance", type=Decimal, default=DEFAULT_INITIAL_BALANCE)
     parser.add_argument("--route-cooldown-ms", type=int, default=500)
     parser.add_argument("--top-routes", type=int, default=10)
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
