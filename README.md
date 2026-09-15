@@ -4,7 +4,7 @@
 
 NovaArb is being built around one non-negotiable rule:
 
-> A price difference is not an opportunity until it remains profitable after spread, depth slippage, fees, latency and execution risk.
+> A price difference is not an opportunity until it remains attractive after spread, depth slippage, fees, latency, closing costs and execution risk.
 
 The first milestone focuses on Binance Spot ↔ USD-M Perpetual dislocations using public order-book data. There is intentionally **no live order client** in the codebase yet.
 
@@ -22,16 +22,19 @@ The first milestone focuses on Binance Spot ↔ USD-M Perpetual dislocations usi
 
 ## Edge model
 
+For Spot ↔ Perpetual, NovaArb models **basis capture potential**, not instant realized profit. Opening long spot + short perpetual is hedged exposure, but the basis is only realized when the legs later converge/close. NovaArb therefore reserves closing costs up front.
+
 NovaArb calculates:
 
 ```text
-mid-market dislocation
-- bid/ask spread cost
-- depth slippage
-- taker fees
+gross basis/dislocation
+- entry bid/ask spread cost
+- entry depth slippage
+- entry taker fees
 - latency reserve
+- conservative exit fee/market reserve
 - funding reserve (when relevant)
-= executable net edge
+= net capture potential
 ```
 
 Spread and slippage are deliberately separated for diagnostics and never subtracted twice.

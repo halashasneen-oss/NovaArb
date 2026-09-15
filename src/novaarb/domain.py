@@ -84,13 +84,14 @@ class BookFill:
 
 @dataclass(frozen=True, slots=True)
 class CostBreakdown:
-    mid_dislocation_usd: Decimal
-    spread_cost_usd: Decimal
+    gross_dislocation_usd: Decimal
+    entry_spread_cost_usd: Decimal
     depth_slippage_usd: Decimal
-    fees_usd: Decimal
+    entry_fees_usd: Decimal
     latency_reserve_usd: Decimal
+    exit_reserve_usd: Decimal
     funding_reserve_usd: Decimal
-    net_profit_usd: Decimal
+    net_capture_usd: Decimal
     net_edge_bps: Decimal
 
 

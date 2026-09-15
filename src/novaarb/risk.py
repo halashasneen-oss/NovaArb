@@ -12,7 +12,7 @@ class RiskReason(StrEnum):
     EDGE_TOO_SMALL = "edge_too_small"
     STALE_BOOK = "stale_book"
     NOTIONAL_TOO_LARGE = "notional_too_large"
-    NON_POSITIVE_PROFIT = "non_positive_profit"
+    NON_POSITIVE_CAPTURE = "non_positive_capture"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,8 +33,8 @@ class RiskEngine:
         self.limits = limits
 
     def assess(self, opportunity: ArbitrageOpportunity) -> RiskDecision:
-        if opportunity.costs.net_profit_usd <= ZERO:
-            return RiskDecision(False, RiskReason.NON_POSITIVE_PROFIT)
+        if opportunity.costs.net_capture_usd <= ZERO:
+            return RiskDecision(False, RiskReason.NON_POSITIVE_CAPTURE)
         if opportunity.costs.net_edge_bps < self.limits.min_net_edge_bps:
             return RiskDecision(False, RiskReason.EDGE_TOO_SMALL)
         max_age = max(opportunity.buy_book_age_ms, opportunity.sell_book_age_ms)

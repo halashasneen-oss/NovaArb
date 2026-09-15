@@ -62,7 +62,7 @@ async def _scan(args: argparse.Namespace) -> None:
         opp = event.opportunity
         print(
             f"{opp.symbol} buy={opp.buy_market.value} sell={opp.sell_market.value} "
-            f"net={opp.costs.net_profit_usd:.6f} USDT "
+            f"capture={opp.costs.net_capture_usd:.6f} USDT "
             f"edge={opp.costs.net_edge_bps:.3f} bps "
             f"age={max(opp.buy_book_age_ms, opp.sell_book_age_ms)}ms"
         )

@@ -9,7 +9,11 @@ from conftest import make_book
 
 def _strategy() -> SpotPerpStrategy:
     fees = FeeSchedule(spot_taker_bps=Decimal("1"), futures_taker_bps=Decimal("1"))
-    model = ExecutableEdgeModel(fees, latency_reserve_bps=Decimal("0"))
+    model = ExecutableEdgeModel(
+        fees,
+        latency_reserve_bps=Decimal("0"),
+        exit_market_reserve_bps=Decimal("0"),
+    )
     return SpotPerpStrategy(
         config=SpotPerpConfig(target_notional_usd=Decimal("100")),
         fees=fees,
@@ -24,7 +28,7 @@ def test_profitable_cash_and_carry_passes_risk() -> None:
 
     assert opportunity.buy_market is MarketType.SPOT
     assert opportunity.sell_market is MarketType.PERPETUAL
-    assert opportunity.costs.net_profit_usd > 0
+    assert opportunity.costs.net_capture_usd > 0
     assert opportunity.costs.net_edge_bps > Decimal("50")
 
     decision = RiskEngine(
@@ -50,7 +54,7 @@ def test_small_dislocation_fails_after_costs() -> None:
         )
     ).assess(opportunity)
     assert decision.approved is False
-    assert decision.reason in {RiskReason.NON_POSITIVE_PROFIT, RiskReason.EDGE_TOO_SMALL}
+    assert decision.reason in {RiskReason.NON_POSITIVE_CAPTURE, RiskReason.EDGE_TOO_SMALL}
 
 
 def test_stale_books_are_rejected_even_when_edge_is_large() -> None:

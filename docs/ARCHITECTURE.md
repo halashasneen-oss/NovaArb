@@ -4,9 +4,9 @@
 
 A visible price difference is never treated as profit. Every candidate must survive this decomposition:
 
-`mid-market dislocation - spread - depth slippage - fees - latency reserve - funding reserve = executable net edge`
+`gross dislocation - entry spread - depth slippage - entry fees - latency reserve - exit reserve - funding reserve = net capture potential`
 
-The engine uses bid/ask depth, never last-traded price, for executable decisions.
+The engine uses bid/ask depth, never last-traded price, for executable decisions. For Spot/Perpetual basis positions, the opening gap is not treated as realized cash profit: both legs must later be closed or settled, so exit fees and a conservative exit-market reserve are charged before a candidate can pass.
 
 ## Phase 1 data flow
 
