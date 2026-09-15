@@ -6,7 +6,7 @@ from typing import Any
 
 from novaarb.allocator import AllocationConfig, AllocationReason, CapitalAwareAllocator, ResearchCandidate
 from novaarb.cross_venue import CrossVenueOpportunity
-from novaarb.domain import ArbitrageOpportunity
+from novaarb.domain import ArbitrageOpportunity, ZERO
 from novaarb.funding import FundingCarryOpportunity
 from novaarb.triangular import ConversionSide, TriangularOpportunity
 
@@ -214,17 +214,34 @@ class ShadowCandidateBus:
     """Ranks heterogeneous research candidates through one capital/resource allocator.
 
     The bus only selects research opportunities. It does not submit orders and it does not
-    convert projected strategy economics into realized PnL. Strategy-specific execution/replay
-    remains responsible for proving fills, holding periods and exits.
+    convert projected strategy economics into realized PnL. Persistent-state arguments allow
+    longer-lived positions to keep consuming capital, slots and market resources while new
+    candidates are ranked.
     """
 
     def __init__(self, config: AllocationConfig) -> None:
         self.allocator = CapitalAwareAllocator(config)
 
-    def allocate(self, envelopes: tuple[CandidateEnvelope, ...]) -> CandidateBusResult:
+    def allocate(
+        self,
+        envelopes: tuple[CandidateEnvelope, ...],
+        *,
+        reserved_capital_usdt: Decimal = ZERO,
+        open_positions: int = 0,
+        used_resources: frozenset[str] = frozenset(),
+        strategy_capital_usdt: dict[str, Decimal] | None = None,
+        strategy_positions: dict[str, int] | None = None,
+    ) -> CandidateBusResult:
         if len({item.candidate.opportunity_id for item in envelopes}) != len(envelopes):
             raise ValueError("candidate envelope opportunity ids must be unique")
-        allocation = self.allocator.allocate(tuple(item.candidate for item in envelopes))
+        allocation = self.allocator.allocate(
+            tuple(item.candidate for item in envelopes),
+            reserved_capital_usdt=reserved_capital_usdt,
+            open_positions=open_positions,
+            used_resources=used_resources,
+            strategy_capital_usdt=strategy_capital_usdt,
+            strategy_positions=strategy_positions,
+        )
         by_id = {item.candidate.opportunity_id: item for item in envelopes}
         decisions = tuple(
             CandidateBusDecision(
