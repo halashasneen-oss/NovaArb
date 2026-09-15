@@ -155,6 +155,12 @@ class FundingShadowBook:
         capital = candidate.capital_required_usdt
         if self.inventory.balance(venue, quote_asset) < capital:
             raise ValueError("insufficient free quote inventory for funding position")
+        future_targets = [
+            target
+            for symbol, target in self.latest_funding_by_target
+            if symbol == opportunity.symbol and target > opportunity.created_time_ms
+        ]
+        next_funding_time_ms = min(future_targets) if future_targets else 0
         self.inventory.apply_deltas(
             (
                 AssetBalanceDelta(venue, quote_asset, -capital),
@@ -173,7 +179,7 @@ class FundingShadowBook:
             entry_fees_quote=opportunity.entry_fees_usdt,
             capital_reserved_quote=capital,
             opened_at_ms=opportunity.created_time_ms,
-            next_funding_time_ms=0,
+            next_funding_time_ms=next_funding_time_ms,
             funding_intervals_required=funding_intervals,
             resource_keys=candidate.resource_keys,
         )
@@ -212,9 +218,7 @@ class FundingShadowBook:
                 snapshot = self.latest_funding_by_target.get((position.symbol, target))
                 if snapshot is None or snapshot.received_time_ms > target:
                     break
-                payment = (
-                    position.base_quantity * snapshot.mark_price * snapshot.funding_rate
-                )
+                payment = position.base_quantity * snapshot.mark_price * snapshot.funding_rate
                 position.funding_received_quote += payment
                 position.settled_intervals += 1
                 position.last_settlement_time_ms = target
@@ -332,9 +336,7 @@ class FundingShadowBook:
             entry_fees_quote=position.entry_fees_quote,
             exit_fees_quote=exit_fees,
             realized_net_profit_quote=net,
-            realized_edge_bps=(
-                net / position.reference_notional_quote * TEN_THOUSAND
-            ),
+            realized_edge_bps=(net / position.reference_notional_quote * TEN_THOUSAND),
             holding_ms=max(0, now_ms - position.opened_at_ms),
         )
         del self.positions[position_id]
