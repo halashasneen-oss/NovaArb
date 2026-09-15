@@ -19,10 +19,12 @@ class ScannerConfig:
     target_notional_usd: Decimal = Decimal("50")
     min_net_edge_bps: Decimal = Decimal("2")
     max_book_age_ms: int = 750
+    max_book_skew_ms: int = 250
     max_notional_usd: Decimal = Decimal("100")
     spot_taker_fee_bps: Decimal = Decimal("10")
     futures_taker_fee_bps: Decimal = Decimal("5")
     latency_reserve_bps: Decimal = Decimal("0.75")
+    exit_market_reserve_bps: Decimal = Decimal("2.0")
     emit_cooldown_ms: int = 1000
 
 
@@ -37,7 +39,11 @@ class SpotPerpScanner:
         self.config = config
         self.recorder = recorder
         fees = FeeSchedule(config.spot_taker_fee_bps, config.futures_taker_fee_bps)
-        model = ExecutableEdgeModel(fees, config.latency_reserve_bps)
+        model = ExecutableEdgeModel(
+            fees,
+            config.latency_reserve_bps,
+            config.exit_market_reserve_bps,
+        )
         self.strategy = SpotPerpStrategy(
             config=SpotPerpConfig(target_notional_usd=config.target_notional_usd),
             fees=fees,
@@ -47,6 +53,7 @@ class SpotPerpScanner:
             RiskLimits(
                 min_net_edge_bps=config.min_net_edge_bps,
                 max_book_age_ms=config.max_book_age_ms,
+                max_book_skew_ms=config.max_book_skew_ms,
                 max_notional_usd=config.max_notional_usd,
             )
         )

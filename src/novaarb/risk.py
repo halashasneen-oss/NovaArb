@@ -11,6 +11,7 @@ class RiskReason(StrEnum):
     APPROVED = "approved"
     EDGE_TOO_SMALL = "edge_too_small"
     STALE_BOOK = "stale_book"
+    BOOK_SKEW = "book_skew"
     NOTIONAL_TOO_LARGE = "notional_too_large"
     NON_POSITIVE_CAPTURE = "non_positive_capture"
 
@@ -19,6 +20,7 @@ class RiskReason(StrEnum):
 class RiskLimits:
     min_net_edge_bps: Decimal = Decimal("2.0")
     max_book_age_ms: int = 750
+    max_book_skew_ms: int = 250
     max_notional_usd: Decimal = Decimal("100")
 
 
@@ -40,6 +42,8 @@ class RiskEngine:
         max_age = max(opportunity.buy_book_age_ms, opportunity.sell_book_age_ms)
         if max_age > self.limits.max_book_age_ms:
             return RiskDecision(False, RiskReason.STALE_BOOK)
+        if opportunity.book_skew_ms > self.limits.max_book_skew_ms:
+            return RiskDecision(False, RiskReason.BOOK_SKEW)
         if opportunity.reference_notional_usd > self.limits.max_notional_usd:
             return RiskDecision(False, RiskReason.NOTIONAL_TOO_LARGE)
         return RiskDecision(True, RiskReason.APPROVED)

@@ -113,3 +113,7 @@ class ArbitrageOpportunity:
     @property
     def reference_notional_usd(self) -> Decimal:
         return (self.buy_fill.quote_quantity + self.sell_fill.quote_quantity) / Decimal("2")
+
+    @property
+    def book_skew_ms(self) -> int:
+        return abs(self.buy_book_age_ms - self.sell_book_age_ms)
