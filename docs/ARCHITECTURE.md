@@ -31,18 +31,20 @@ For cross-venue Spot research:
 9. Staleness and cross-book clock-skew gates reject asynchronous snapshots.
 10. Pre-funded cross-venue gates require quote on the buy venue and base on the sell venue before a candidate is actionable in research.
 11. `MultiAssetInventoryLedger` extends pre-funded accounting across many assets and venues instead of one base/quote pair.
-12. `MultiInstrumentShadowEngine` can evaluate many normalized instruments against the same shared venue/asset inventory.
-13. `ShadowRiskGuard` can halt shadow decisions for unhealthy data, daily-loss breaches, venue concentration or target-weight drift.
-14. Research capture stores raw books, funding updates and metadata in deterministic JSONL/gzip sessions.
-15. Replay reconstructs opportunity windows, route statistics, funding projections and cross-venue delayed fills.
-16. `SequentialTriangleSimulator` replaces simultaneous-fill assumptions with timed leg-by-leg execution.
-17. Cross-venue replay reprices buy and sell legs independently on the first later venue book inside the configured latency wait budget.
-18. `InventoryLedger` tracks single-instrument hypothetical pre-funded balances after simulated cross-venue fills.
-19. `InventoryRebalancePlanner` estimates transfers required to restore target inventory shares and their modeled cost.
-20. `EmergencyUnwinder` prices partial triangular exposure back to the anchor asset when possible.
-21. Paper accounting measures busy capital, cooldowns, simulated PnL, drawdown and profit factor.
-22. Fee-sensitivity replay retests identical captures under alternate taker-fee assumptions.
-23. `CapitalAwareAllocator` ranks research candidates while enforcing cash, position, strategy and resource-conflict limits.
+12. `MultiInstrumentShadowEngine` evaluates many normalized instruments against the same shared venue/asset inventory.
+13. `CapitalAwareAllocator` selects among simultaneous candidates before hypothetical execution.
+14. Selected shadow candidates are repriced from the latest observed books instead of inheriting detection prices.
+15. `ShadowRiskGuard` can halt shadow decisions for unhealthy data, daily-loss breaches, venue concentration or target-weight drift.
+16. `ShadowLiveCoordinator` applies allocation, repricing, inventory enforcement and conservative accounting to public-data signals only.
+17. Research capture stores raw books, funding updates and metadata in deterministic JSONL/gzip sessions.
+18. Replay reconstructs opportunity windows, route statistics, funding projections, cross-venue delayed fills and shared shadow portfolio outcomes.
+19. `SequentialTriangleSimulator` replaces simultaneous-fill assumptions with timed leg-by-leg execution.
+20. Cross-venue replay reprices buy and sell legs independently on the first later venue book inside the configured latency wait budget.
+21. `InventoryLedger` tracks single-instrument hypothetical pre-funded balances after simulated cross-venue fills.
+22. `InventoryRebalancePlanner` estimates transfers required to restore target inventory shares and their modeled cost.
+23. `EmergencyUnwinder` prices partial triangular exposure back to the anchor asset when possible.
+24. Paper accounting measures busy capital, cooldowns, simulated PnL, drawdown and profit factor.
+25. Fee-sensitivity replay retests identical captures under alternate taker-fee assumptions.
 
 ## Venue-health evidence
 
@@ -86,25 +88,39 @@ The resulting fill is not allowed to inherit the detection price. Visible depth 
 
 After completed simulated fills, the inventory ledger reflects the resulting base/quote drift. A separate planner estimates the transfers needed to return to the initial target distribution. Those transfer instructions are research outputs only and are never executed.
 
-## Shadow portfolio layer
+## Shared shadow portfolio replay
+
+`replay_shadow_portfolio` consumes one chronological multi-venue capture containing several canonical Spot instruments. All instruments share the same `MultiAssetInventoryLedger`, `CapitalAwareAllocator` and `ShadowRiskGuard`.
+
+Approved detections are grouped into short allocation windows. The allocator chooses among simultaneous candidates using deployable capital, opportunity caps, position limits and resource conflicts. A selected detection still does not count as a fill: the engine retrieves the latest observed buy and sell books at allocation time, recalculates visible-depth economics and checks quantitative inventory again. If the edge has disappeared, the event is counted as decay rather than a zero-loss trade.
+
+Completed hypothetical fills update venue/asset balances and record conservative net profit. The conservative research PnL keeps configured execution and rebalance reserves even though those reserves are not debited from the hypothetical cash ledger. This intentionally makes the acceptance evidence harder to pass than raw marked inventory gain.
+
+`build_shadow_metrics` converts the replay summary into a stable JSON-ready operator payload with portfolio, venue, asset, symbol, allocation-rejection, kill-switch and optional venue-health sections.
+
+## Foreground public shadow operation
+
+`novaarb-shadow-run` wires the existing Binance and Bybit public adapters into `MultiInstrumentPublicShadowScanner` and `ShadowLiveCoordinator`. It runs in the foreground, accepts hypothetical pre-funded balances, batches simultaneous signals for shared-capital allocation, reprices selected opportunities from current public books, applies only hypothetical inventory changes and emits optional heartbeat metrics through the research recorder.
+
+The runner has no authenticated exchange client. Running it for days or weeks is an operator/deployment action; the existence of the runner is not evidence that a multi-day profitability benchmark has already been completed.
+
+## Shadow risk layer
 
 The multi-asset ledger stores balances by `(venue, asset)`. A cross-venue shadow fill moves quote and base balances on the two venues while keeping unrelated assets untouched, which allows BTC, ETH and later instruments to share the same pre-funded inventory model.
 
-The ledger can mark every nonzero asset into a common quote currency using supplied reference prices. `ShadowRiskGuard` then evaluates total marked value, maximum venue concentration, maximum asset concentration, drift from configured venue target weights and realized daily PnL. An unhealthy-data flag has the highest-priority kill switch.
-
-`MultiInstrumentPublicShadowScanner` is still public-data-only. It can run many canonical instruments across multiple public adapters and uses the shared inventory ledger for instrument-specific inventory gates. It does not place orders.
+The ledger can mark every nonzero asset into a common quote currency using observed reference prices. `ShadowRiskGuard` then evaluates total marked value, maximum venue concentration, maximum asset concentration, drift from configured venue target weights and conservative realized daily PnL. An unhealthy-data flag has the highest-priority kill switch.
 
 ## Capital allocation layer
 
 The research allocator consumes normalized candidate economics rather than strategy-specific objects. It can enforce total deployable capital and cash reserve, maximum positions, maximum capital per opportunity, per-strategy position/capital limits, minimum expected edge, and resource exclusivity so overlapping markets cannot be double-allocated silently.
 
-The next shadow milestone is to combine that capital allocator with the multi-asset inventory and shadow-risk layers in one chronological multi-strategy replay.
+The v0.9 shadow path uses this allocator for multi-instrument cross-venue candidates. Funding and the remaining strategy families still need adapters into the same shadow candidate bus before the project can claim a truly cross-strategy portfolio replay.
 
 ## Safety boundary
 
-There is no authenticated exchange client, order endpoint, withdrawal endpoint or transfer executor in v0.8. All Binance/Bybit integration is public market data. Inventory, shadow-risk and rebalancing components are simulations used to expose capital constraints and hidden cross-exchange costs.
+There is no authenticated exchange client, order endpoint, withdrawal endpoint or transfer executor in v0.9. All Binance/Bybit shadow integration is public market data. Inventory, shadow-risk and rebalancing components are simulations used to expose capital constraints and hidden cross-exchange costs.
 
-Live execution remains a separate future milestone behind reviewed interfaces, hard exposure limits, kill switches and shadow evidence.
+Live execution remains a separate future milestone behind reviewed interfaces, hard exposure limits, kill switches and sustained shadow evidence.
 
 ## Evidence required before live execution
 
@@ -121,3 +137,4 @@ Live execution remains a separate future milestone behind reviewed interfaces, h
 - venue disconnect/reconnect and data-quality tests
 - global exposure and kill-switch tests
 - long-running multi-instrument shadow run with no real orders across multiple market regimes
+- predefined quantitative acceptance thresholds that must pass before authenticated execution code is introduced
