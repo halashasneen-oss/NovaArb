@@ -112,6 +112,83 @@ def test_allocator_rejects_resource_conflicts_and_strategy_limits() -> None:
     assert reasons["funding-sol"] is AllocationReason.STRATEGY_POSITION_LIMIT
 
 
+def test_allocator_accounts_for_persistent_capital_positions_and_resources() -> None:
+    allocator = CapitalAwareAllocator(
+        AllocationConfig(
+            total_capital_usdt=Decimal("250"),
+            cash_reserve_usdt=Decimal("50"),
+            max_positions=2,
+            max_capital_per_opportunity_usdt=Decimal("100"),
+        )
+    )
+    result = allocator.allocate(
+        (
+            _candidate(
+                "btc-conflict",
+                capital="40",
+                edge="20",
+                resources=("spot:binance:BTC/USDT",),
+            ),
+            _candidate(
+                "eth",
+                capital="70",
+                edge="10",
+                resources=("spot:binance:ETH/USDT",),
+            ),
+            _candidate(
+                "sol",
+                capital="30",
+                edge="9",
+                resources=("spot:binance:SOL/USDT",),
+            ),
+        ),
+        reserved_capital_usdt=Decimal("120"),
+        open_positions=1,
+        used_resources=frozenset({"spot:binance:BTC/USDT"}),
+        strategy_capital_usdt={"funding": Decimal("120")},
+        strategy_positions={"funding": 1},
+    )
+
+    reasons = {
+        decision.candidate.opportunity_id: decision.reason for decision in result.decisions
+    }
+    assert reasons["btc-conflict"] is AllocationReason.RESOURCE_CONFLICT
+    assert reasons["eth"] is AllocationReason.SELECTED
+    assert reasons["sol"] is AllocationReason.PORTFOLIO_POSITION_LIMIT
+    assert result.allocated_capital_usdt == Decimal("190")
+    assert result.remaining_capital_usdt == Decimal("10")
+
+
+def test_allocator_persistent_state_counts_against_strategy_limits() -> None:
+    allocator = CapitalAwareAllocator(
+        AllocationConfig(
+            total_capital_usdt=Decimal("300"),
+            max_positions=4,
+            max_capital_per_opportunity_usdt=Decimal("100"),
+            strategy_limits=(
+                StrategyCapitalLimit("funding", 1, Decimal("150")),
+            ),
+        )
+    )
+    result = allocator.allocate(
+        (
+            _candidate(
+                "another-funding",
+                strategy="funding",
+                capital="50",
+                resources=("spot:binance:ETH/USDT",),
+            ),
+        ),
+        reserved_capital_usdt=Decimal("100"),
+        open_positions=1,
+        strategy_capital_usdt={"funding": Decimal("100")},
+        strategy_positions={"funding": 1},
+    )
+
+    assert result.selected == ()
+    assert result.decisions[0].reason is AllocationReason.STRATEGY_POSITION_LIMIT
+
+
 def test_allocator_rejects_bad_candidates_and_duplicate_ids() -> None:
     allocator = CapitalAwareAllocator(
         AllocationConfig(
@@ -137,3 +214,13 @@ def test_allocator_rejects_bad_candidates_and_duplicate_ids() -> None:
     duplicate = _candidate("same")
     with pytest.raises(ValueError, match="opportunity_id"):
         allocator.allocate((duplicate, duplicate))
+
+
+def test_allocator_rejects_invalid_persistent_state() -> None:
+    allocator = CapitalAwareAllocator(AllocationConfig(total_capital_usdt=Decimal("100")))
+    with pytest.raises(ValueError, match="reserved capital"):
+        allocator.allocate((), reserved_capital_usdt=Decimal("101"))
+    with pytest.raises(ValueError, match="open_positions"):
+        allocator.allocate((), open_positions=5)
+    with pytest.raises(ValueError, match="strategy capital"):
+        allocator.allocate((), strategy_capital_usdt={"funding": Decimal("-1")})
