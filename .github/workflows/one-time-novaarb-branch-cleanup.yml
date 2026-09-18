@@ -1,0 +1,53 @@
+name: One-time NovaArb branch cleanup
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-time-novaarb-branch-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Delete obsolete branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for ref in \
+            "funding-replay-correctness-v2" \
+            "funding-spread-history-replay" \
+            "milestone-7-5-real-market-evidence" \
+            "milestone-7-shadow-evidence" \
+            "milestone-7-unified-shadow" \
+            "tmp/ake-backtest-20260917" \
+            "tmp/fivecoin-aggressive-7d-20260917" \
+            "tmp/fivecoin-explosive-breakout-20260917" \
+            "tmp/fivecoin-explosive-confirm-20260917" \
+            "tmp/fivecoin-managed-exit-20260917" \
+            "tmp/fivecoin-score7-confirm-20260917" \
+            "tmp/fivecoin-score7-only-20260917" \
+            "tmp/followthrough15-30then10-20260917" \
+            "tmp/followthrough15-may2026-top10-20260917" \
+            "tmp/funnel-ranked-60d-20260917" \
+            "tmp/hybrid-zec-score7plus-60d-20260917" \
+            "tmp/portfolio-10coins-backtest-20260917" \
+            "tmp/profit-lock-backtest-20260917" \
+            "tmp/strategy913-dynamic-may2026-20260917" \
+            "tmp/strategy913-persistent-may2026-20260917" \
+            "tmp/strategy-912-40coin-30d-20260917" \
+            "tmp/strategy-912-followthrough-analysis-20260917" \
+            "tmp/strategy-912-top10-30d-20260917" \
+            "tmp/strategy-912-top10-30d-no-lock-20260917" \
+            "tmp/ten-score7plus-flow-30d-20260917" \
+            "tmp/ten-score7plus-flow-60d-20260917" \
+            "tmp/ten-score7plus-flow-20260917"
+          do
+            echo "Deleting $ref"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/$ref"
+          done
